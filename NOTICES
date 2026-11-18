@@ -1,0 +1,22 @@
+Proxito uses the following open source components:
+
+--------------------------------------------------------------------------------
+jvm-http-proxy-agent
+https://github.com/httptoolkit/jvm-http-proxy-agent
+Copyright (c) HTTP Toolkit contributors
+Licensed under the Apache License, Version 2.0
+
+--------------------------------------------------------------------------------
+goproxy
+https://github.com/elazarl/goproxy
+Copyright (c) 2012 Elazar Leibovich
+Licensed under the BSD 2-Clause License
+
+--------------------------------------------------------------------------------
+gorilla/websocket
+https://github.com/gorilla/websocket
+Copyright (c) 2013 The Gorilla WebSocket Authors
+Licensed under the BSD 2-Clause License
+
+--------------------------------------------------------------------------------
+Full license texts available at the URLs above.

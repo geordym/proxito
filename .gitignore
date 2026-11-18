@@ -1,0 +1,14 @@
+# Build outputs
+proxito.exe
+proxito
+dist/
+
+# Go test cache
+*.test
+*.out
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
