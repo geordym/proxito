@@ -12,3 +12,5 @@ dist/
 
 # Windows
 Thumbs.db
+*.exe~
+*~
