@@ -19,7 +19,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Download dependencies
+        run: go mod download
+        env:
+          GOPROXY: direct
+
       - name: Build all platforms
+        env:
+          GOPROXY: direct
         run: |
           mkdir dist
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/proxito-windows-amd64.exe .
