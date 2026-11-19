@@ -33,7 +33,7 @@ func main() {
 
 	proxyHost := flag.String("host", "127.0.0.1", "proxy host")
 	proxyPort := flag.String("port", "8080", "proxy port")
-	uiPort    := flag.String("ui-port", "8282", "UI port")
+	uiPort := flag.String("ui-port", "8282", "UI port")
 	flag.Parse()
 
 	// 1. Load persisted settings
@@ -68,10 +68,10 @@ func main() {
 	}
 
 	// 5. Build components
-	store     := proxy.NewStore(1000)
+	store := proxy.NewStore(1000)
 	intercept := proxy.NewInterceptHub()
-	rules     := proxy.NewRuleEngine(proxitoDir)
-	jvmMgr   := jvm.New(agentJar, cfg.JavaBin)
+	rules := proxy.NewRuleEngine(proxitoDir)
+	jvmMgr := jvm.New(agentJar, cfg.JavaBin)
 
 	// 6. Create the MITM proxy (go-mitmproxy manages CA cert in proxitoDir)
 	proxyAddr := *proxyHost + ":" + *proxyPort
