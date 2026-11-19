@@ -10,12 +10,12 @@ import (
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{
-		"java_bin":          s.jvmMgr.GetJavaBin(),
-		"proxy_host":        s.proxyHost,
-		"proxy_port":        s.proxyPort,
+		"java_bin":           s.jvmMgr.GetJavaBin(),
+		"proxy_host":         s.proxyHost,
+		"proxy_port":         s.proxyPort,
 		"java_auto_detected": s.javaAutoDetected,
-		"java_auto_path":    s.javaAutoPath,
-		"jdks":              s.jdks,
+		"java_auto_path":     s.javaAutoPath,
+		"jdks":               s.jdks,
 	})
 }
 
