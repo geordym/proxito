@@ -24,7 +24,7 @@ type Manager struct {
 	javaBin  string
 	attached map[string]bool
 	// tools.jar cache: empty string = not yet resolved
-	toolsJar string
+	toolsJar  string
 	toolsDone bool
 }
 

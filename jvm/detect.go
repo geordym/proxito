@@ -12,10 +12,10 @@ import (
 
 // JDKInfo describes a detected Java installation.
 type JDKInfo struct {
-	Path    string `json:"path"`    // full path to java/java.exe
-	Name    string `json:"name"`    // display name (dir name)
-	Major   int    `json:"major"`   // major version (8, 11, 17 …)
-	HasTools bool  `json:"has_tools"` // tools.jar present (Java 8 only)
+	Path     string `json:"path"`      // full path to java/java.exe
+	Name     string `json:"name"`      // display name (dir name)
+	Major    int    `json:"major"`     // major version (8, 11, 17 …)
+	HasTools bool   `json:"has_tools"` // tools.jar present (Java 8 only)
 }
 
 // DetectJDKs scans well-known locations and returns all usable JDKs,
