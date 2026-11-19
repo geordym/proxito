@@ -29,7 +29,7 @@ type Manager struct {
 	inflight map[string]bool
 	watch    watchList
 	// tools.jar cache: empty string = not yet resolved
-	toolsJar string
+	toolsJar  string
 	toolsDone bool
 }
 

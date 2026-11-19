@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Build & quality
+    runs-on: ubuntu-latest
+    env:
+      GOPROXY: direct
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Format check
+        run: test -z "$(gofmt -l .)"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./...
+
+  cross-compile:
+    name: Cross-compile (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    env:
+      GOPROXY: direct
+      CGO_ENABLED: 0
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build ./...
+
+  security:
+    name: Security (govulncheck)
+    runs-on: ubuntu-latest
+    env:
+      GOPROXY: direct
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  dependency-freeze:
+    name: Dependency freeze
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No new direct dependencies allowed
+        run: |
+          NEW=$(grep -E '^\s+\S+ v' go.mod | grep -v '// indirect' | awk '{print $1}' | sort)
+          OLD=$(git show origin/main:go.mod | grep -E '^\s+\S+ v' | grep -v '// indirect' | awk '{print $1}' | sort)
+          ADDED=$(comm -13 <(echo "$OLD") <(echo "$NEW"))
+          if [ -n "$ADDED" ]; then
+            echo "❌ Nuevas dependencias directas detectadas:"
+            echo "$ADDED"
+            echo ""
+            echo "Este proyecto mantiene un conjunto cerrado de dependencias."
+            echo "Abre un issue para discutirlo antes de agregar nuevas."
+            exit 1
+          fi
+          echo "✅ Sin nuevas dependencias"

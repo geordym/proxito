@@ -17,6 +17,7 @@ function switchView(name) {
 
 document.getElementById('tab-intercept').addEventListener('click', () => switchView('intercept'));
 document.getElementById('tab-inspect')  .addEventListener('click', () => switchView('inspect'));
+document.getElementById('tab-rules')    .addEventListener('click', () => { switchView('rules'); loadRules(); });
 document.getElementById('tab-settings') .addEventListener('click', () => switchView('settings'));
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
@@ -180,9 +181,11 @@ async function renderDetail(id) {
     renderReqCol(data);
     renderRespCol(data, f.state);
 
-    // expose data to copy dropdown
+    // expose data to copy dropdown / rule button
     _copyData = data;
-    document.getElementById('copy-wrap').style.display = '';
+    document.getElementById('copy-wrap').style.display   = '';
+    document.getElementById('rule-wrap').style.display   = '';
+    document.getElementById('replay-wrap').style.display = '';
   } catch {
     document.getElementById('req-col').innerHTML  = '<span class="body-empty">Error cargando detalle.</span>';
     document.getElementById('resp-col').innerHTML = '';
@@ -193,7 +196,7 @@ function renderReqCol(data) {
   const col = document.getElementById('req-col');
   col.innerHTML = '';
   col.appendChild(headersBlock(data.req_headers));
-  col.appendChild(bodyBlock(data.req_body));
+  col.appendChild(bodyBlock(data.req_body, ctFrom(data.req_headers)));
 }
 
 function renderRespCol(data, state) {
@@ -201,15 +204,7 @@ function renderRespCol(data, state) {
   col.innerHTML = '';
 
   if (state === 'paused') {
-    const banner = document.createElement('div');
-    banner.className = 'paused-banner';
-    banner.innerHTML = `
-      <div class="paused-banner-title">⏸ Petición en pausa</div>
-      <div class="paused-banner-actions">
-        <button class="btn btn-green" onclick="resumeFlow('${esc(data.id)}')">▶ Reanudar</button>
-        <button class="btn btn-red"   onclick="blockFlow('${esc(data.id)}')">✕ Bloquear</button>
-      </div>`;
-    col.appendChild(banner);
+    col.appendChild(buildPausedEditor(data));
     return;
   }
 
@@ -224,7 +219,7 @@ function renderRespCol(data, state) {
   }
 
   col.appendChild(headersBlock(data.resp_headers));
-  col.appendChild(bodyBlock(data.resp_body));
+  col.appendChild(bodyBlock(data.resp_body, ctFrom(data.resp_headers)));
 }
 
 function headersBlock(headers) {
@@ -238,14 +233,63 @@ function headersBlock(headers) {
   return wrap;
 }
 
-function bodyBlock(body) {
+function ctFrom(headers) {
+  if (!headers) return '';
+  return (headers['Content-Type'] || headers['content-type'] || '').toLowerCase();
+}
+
+function highlightJSON(s) {
+  try {
+    const pretty = JSON.stringify(JSON.parse(s), null, 2);
+    return pretty.replace(
+      /("(?:\\.|[^\\"])*"(?:\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      m => {
+        const e = esc(m);
+        if (m[0] === '"') return m.endsWith(':') ? `<span class="hl-key">${e}</span>` : `<span class="hl-str">${e}</span>`;
+        if (m === 'true' || m === 'false') return `<span class="hl-bool">${m}</span>`;
+        if (m === 'null') return `<span class="hl-null">${m}</span>`;
+        return `<span class="hl-num">${m}</span>`;
+      }
+    );
+  } catch { return esc(s); }
+}
+
+function formatXML(s) {
+  let indent = 0;
+  const indented = s.replace(/>\s*</g, '>\n<').split('\n').map(raw => {
+    const node = raw.trim();
+    if (!node) return '';
+    if (node.startsWith('</')) indent = Math.max(0, indent - 1);
+    const line = '  '.repeat(indent) + node;
+    if (/^<[^!?\/]/.test(node) && !node.includes('</') && !node.endsWith('/>')) indent++;
+    return line;
+  }).filter(Boolean).join('\n');
+
+  return esc(indented).replace(/&lt;(.*?)&gt;/g, (_, inner) => {
+    const colored = inner
+      .replace(/([\w:.-]+=)(&quot;[^&]*&quot;)/g,
+        '<span class="hl-attr">$1</span><span class="hl-str">$2</span>')
+      .replace(/^(\/?!?[\w:.-]+)/, '<span class="hl-tag">$1</span>');
+    return `<span class="hl-punc">&lt;</span>${colored}<span class="hl-punc">&gt;</span>`;
+  });
+}
+
+function bodyBlock(body, ct) {
   const wrap = document.createElement('div');
   wrap.className = 'body-section';
   if (!body) {
     wrap.innerHTML = '<span class="body-empty">(sin cuerpo)</span>';
     return wrap;
   }
-  wrap.innerHTML = `<div class="section-title">Body</div><pre class="body-pre">${esc(prettyJSON(body))}</pre>`;
+  let html;
+  if (ct && ct.includes('json')) {
+    html = highlightJSON(body);
+  } else if (ct && (ct.includes('xml') || ct.includes('html'))) {
+    html = formatXML(body);
+  } else {
+    html = esc(body);
+  }
+  wrap.innerHTML = `<div class="section-title">Body</div><pre class="body-pre">${html}</pre>`;
   return wrap;
 }
 
@@ -258,11 +302,99 @@ document.getElementById('intercept-cb').addEventListener('change', async e => {
   });
 });
 
+function buildPausedEditor(data) {
+  const banner = document.createElement('div');
+  banner.className = 'paused-banner';
+
+  const title = document.createElement('div');
+  title.className = 'paused-banner-title';
+  title.textContent = '⏸ Petición en pausa — edita y reanuda';
+  banner.appendChild(title);
+
+  // Headers
+  const hdrLabel = document.createElement('div');
+  hdrLabel.className = 'paused-edit-label';
+  const hdrAddBtn = document.createElement('button');
+  hdrAddBtn.className = 'btn hdr-add-btn';
+  hdrAddBtn.textContent = '+ Header';
+  hdrAddBtn.addEventListener('click', () => addHeaderRow('intercept-hdr-rows', '', ''));
+  hdrLabel.append(Object.assign(document.createElement('span'), {textContent: 'Headers'}), hdrAddBtn);
+  banner.appendChild(hdrLabel);
+
+  const hdrRows = document.createElement('div');
+  hdrRows.className = 'hdr-rows';
+  hdrRows.id = 'intercept-hdr-rows';
+  banner.appendChild(hdrRows);
+  for (const [k, v] of Object.entries(data.req_headers || {})) {
+    addHeaderRow('intercept-hdr-rows', k, v);
+  }
+
+  // Body
+  const bodyLabel = document.createElement('div');
+  bodyLabel.className = 'paused-edit-label';
+  bodyLabel.append(Object.assign(document.createElement('span'), {textContent: 'Body'}));
+  banner.appendChild(bodyLabel);
+
+  const bodyTA = document.createElement('textarea');
+  bodyTA.className = 'intercept-body-ta';
+  bodyTA.id = 'intercept-body';
+  bodyTA.value = data.req_body || '';
+  banner.appendChild(bodyTA);
+
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'paused-banner-actions';
+  actions.style.marginTop = '10px';
+
+  const withBtn = document.createElement('button');
+  withBtn.className = 'btn btn-green';
+  withBtn.textContent = '▶ Reanudar con cambios';
+  withBtn.addEventListener('click', () => resumeFlowWith(data.id));
+
+  const plainBtn = document.createElement('button');
+  plainBtn.className = 'btn';
+  plainBtn.textContent = '▶ Reanudar';
+  plainBtn.addEventListener('click', () => resumeFlow(data.id));
+
+  const blockBtn = document.createElement('button');
+  blockBtn.className = 'btn btn-red';
+  blockBtn.textContent = '✕ Bloquear';
+  blockBtn.addEventListener('click', () => blockFlow(data.id));
+
+  actions.append(withBtn, plainBtn, blockBtn);
+  banner.appendChild(actions);
+  return banner;
+}
+
+async function resumeFlowWith(id) {
+  const headers = readHeaderRows('intercept-hdr-rows') || {};
+  const body = document.getElementById('intercept-body').value;
+  await fetch(`/api/flows/${id}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ headers, body }),
+  });
+}
+
 async function resumeFlow(id) {
   await fetch(`/api/flows/${id}/resume`, { method: 'POST' });
 }
 async function blockFlow(id) {
   await fetch(`/api/flows/${id}/block`, { method: 'POST' });
+}
+
+async function replayFlow(id) {
+  const btn = document.getElementById('replay-btn');
+  btn.disabled = true;
+  btn.textContent = '↻ Enviando…';
+  try {
+    const res  = await fetch(`/api/flows/${id}/replay`, { method: 'POST' });
+    const data = await res.json();
+    if (data.id) selectFlow(data.id);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Reenviar';
+  }
 }
 
 // ── Clear ─────────────────────────────────────────────────────────────────────
@@ -274,6 +406,8 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   document.getElementById('detail-empty').style.display   = '';
   document.getElementById('detail-content').style.display = 'none';
   document.getElementById('copy-wrap').style.display      = 'none';
+  document.getElementById('rule-wrap').style.display      = 'none';
+  document.getElementById('replay-wrap').style.display    = 'none';
 });
 
 // ── JVM grid (Interceptar view) ───────────────────────────────────────────────
@@ -706,15 +840,385 @@ function statusText(f) {
   return String(f.status);
 }
 
-function prettyJSON(s) {
-  try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
-}
 
 function shortName(desc) {
   // "com.example.MyApp --args" → "MyApp"
   const parts = (desc || '').split(/\s+/)[0].split('.');
   return parts[parts.length - 1] || desc;
 }
+
+// ── Rules ─────────────────────────────────────────────────────────────────────
+let _editingRuleId = null;
+
+async function loadRules() {
+  try {
+    const res   = await fetch('/api/rules');
+    const rules = await res.json();
+    renderRulesList(Array.isArray(rules) ? rules : []);
+  } catch (e) {
+    document.getElementById('rules-list').innerHTML =
+      `<div class="rules-empty"><p style="color:var(--s5)">Error cargando reglas: ${esc(e.message)}</p></div>`;
+  }
+}
+
+function renderRulesList(rules) {
+  const list  = document.getElementById('rules-list');
+  const empty = document.getElementById('rules-empty');
+  list.innerHTML = '';
+  if (!rules.length) {
+    list.appendChild(empty || (() => {
+      const d = document.createElement('div');
+      d.id = 'rules-empty';
+      d.className = 'rules-empty';
+      d.innerHTML = '<span class="big-icon">⚡</span><p>Sin reglas. Crea una para bloquear, mockear o modificar respuestas automáticamente.</p>';
+      return d;
+    })());
+    return;
+  }
+  rules.forEach(r => list.appendChild(buildRuleItem(r)));
+}
+
+function buildRuleItem(r) {
+  const item = document.createElement('div');
+  item.className = 'rule-item' + (r.enabled ? '' : ' disabled');
+  item.dataset.id = r.id;
+
+  const badgeClass = { block: 'ab-block', mock: 'ab-mock', modify_headers: 'ab-modify', replace_body: 'ab-replace' }[r.action.type] || 'ab-block';
+  const badgeLabel = { block: 'Block', mock: 'Mock', modify_headers: 'Mod-Hdr', replace_body: 'Repl-Body' }[r.action.type] || r.action.type;
+
+  item.innerHTML = `
+    <label class="rule-toggle" title="${r.enabled ? 'Desactivar' : 'Activar'}">
+      <input type="checkbox" ${r.enabled ? 'checked' : ''}>
+      <span class="rule-toggle-track"></span>
+      <span class="rule-toggle-thumb"></span>
+    </label>
+    <div class="rule-info">
+      <div class="rule-name">${esc(r.name || '(sin nombre)')}</div>
+      <div class="rule-cond">${esc(conditionSummary(r.condition))}</div>
+    </div>
+    <span class="action-badge ${badgeClass}">${badgeLabel}</span>
+    <button class="btn" data-edit="${esc(r.id)}" title="Editar">✎</button>
+    <button class="btn btn-red" data-del="${esc(r.id)}" title="Eliminar">✕</button>
+  `;
+
+  item.querySelector('input[type=checkbox]').addEventListener('change', async e => {
+    const updated = { ...r, enabled: e.target.checked };
+    await fetch(`/api/rules/${r.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+    item.classList.toggle('disabled', !e.target.checked);
+  });
+
+  item.querySelector('[data-edit]').addEventListener('click', () => openRuleModal(r));
+  item.querySelector('[data-del]').addEventListener('click', async () => {
+    if (!confirm(`¿Eliminar la regla "${r.name}"?`)) return;
+    await fetch(`/api/rules/${r.id}`, { method: 'DELETE' });
+    loadRules();
+  });
+
+  return item;
+}
+
+function conditionSummary(c) {
+  if (!c) return '*';
+  const parts = [];
+  if (c.method)      parts.push(c.method);
+  if (c.url_pattern) parts.push('~ ' + c.url_pattern);
+  else if (c.host)   parts.push(c.host);
+  if (c.header_name) parts.push(`hdr:${c.header_name}`);
+  if (c.status_code) parts.push(`status:${c.status_code}`);
+  return parts.join(' ') || '*';
+}
+
+// ── Rule modal helpers ────────────────────────────────────────────────────────
+const CT_KNOWN = [
+  'application/json','application/xml','text/html','text/plain',
+  'application/x-www-form-urlencoded','application/octet-stream',
+];
+
+function getCT(prefix) {
+  const sel = document.getElementById(`rule-${prefix}-ct-sel`);
+  if (sel.value === '__custom__') {
+    return document.getElementById(`rule-${prefix}-ct-custom`).value.trim();
+  }
+  return sel.value;
+}
+
+function setCT(prefix, value) {
+  const sel    = document.getElementById(`rule-${prefix}-ct-sel`);
+  const custom = document.getElementById(`rule-${prefix}-ct-custom`);
+  const v = value || 'application/json';
+  if (CT_KNOWN.includes(v)) {
+    sel.value = v;
+    custom.style.display = 'none';
+  } else {
+    sel.value    = '__custom__';
+    custom.value = v;
+    custom.style.display = '';
+  }
+}
+
+function wireCTSel(prefix) {
+  document.getElementById(`rule-${prefix}-ct-sel`).addEventListener('change', function() {
+    document.getElementById(`rule-${prefix}-ct-custom`).style.display =
+      this.value === '__custom__' ? '' : 'none';
+  });
+}
+
+function addHeaderRow(containerId, key, val) {
+  const container = document.getElementById(containerId);
+  const row = document.createElement('div');
+  row.className = 'hdr-row';
+  row.innerHTML = `
+    <input class="settings-input hdr-key" type="text" placeholder="Nombre" value="${esc(key || '')}">
+    <input class="settings-input hdr-val" type="text" placeholder="Valor"  value="${esc(val || '')}">
+    <button class="btn hdr-rm" title="Eliminar">✕</button>
+  `;
+  row.querySelector('.hdr-rm').addEventListener('click', () => row.remove());
+  container.appendChild(row);
+}
+
+function setHeaderRows(containerId, headers) {
+  document.getElementById(containerId).innerHTML = '';
+  for (const [k, v] of Object.entries(headers || {})) {
+    addHeaderRow(containerId, k, v);
+  }
+}
+
+function readHeaderRows(containerId) {
+  const h = {};
+  document.querySelectorAll(`#${containerId} .hdr-row`).forEach(row => {
+    const k = row.querySelector('.hdr-key').value.trim();
+    const v = row.querySelector('.hdr-val').value.trim();
+    if (k) h[k] = v;
+  });
+  return Object.keys(h).length ? h : undefined;
+}
+
+wireCTSel('mock');
+wireCTSel('replace');
+
+document.getElementById('rule-mock-hdr-add').addEventListener('click', () => addHeaderRow('rule-mock-hdr-rows', '', ''));
+document.getElementById('rule-mod-hdr-add') .addEventListener('click', () => addHeaderRow('rule-mod-hdr-rows', '', ''));
+
+document.getElementById('rule-mock-fmt')   .addEventListener('click', () => fmtBodyTA('rule-mock-body'));
+document.getElementById('rule-replace-fmt').addEventListener('click', () => fmtBodyTA('rule-replace-body'));
+
+function fmtBodyTA(id) {
+  const ta = document.getElementById(id);
+  try { ta.value = JSON.stringify(JSON.parse(ta.value), null, 2); } catch {}
+}
+
+// ── Rule modal open/close/save ────────────────────────────────────────────────
+function openRuleModal(rule) {
+  _editingRuleId = rule ? (rule.id || null) : null;
+  document.getElementById('rule-modal-title').textContent  = _editingRuleId ? 'Editar regla' : 'Nueva regla';
+  document.getElementById('rule-modal-status').textContent = '';
+
+  const r = rule || { name: '', enabled: true, condition: {}, action: { type: 'block' } };
+  const c = r.condition || {};
+  const a = r.action    || {};
+
+  document.getElementById('rule-name').value         = r.name || '';
+  document.getElementById('rule-url-pattern').value  = c.url_pattern  || '';
+  document.getElementById('rule-host').value         = c.host         || '';
+  document.getElementById('rule-method').value       = c.method       || '';
+  document.getElementById('rule-header-name').value  = c.header_name  || '';
+  document.getElementById('rule-header-value').value = c.header_value || '';
+  document.getElementById('rule-action-type').value  = a.type || 'block';
+
+  // Mock
+  document.getElementById('rule-mock-status').value = a.type === 'mock' ? (a.status_code || '') : '';
+  setCT('mock', a.type === 'mock' ? (a.content_type || '') : '');
+  setHeaderRows('rule-mock-hdr-rows', a.type === 'mock' ? a.headers : null);
+  document.getElementById('rule-mock-body').value   = a.type === 'mock' ? (a.body || '') : '';
+
+  // Modify headers
+  document.getElementById('rule-mod-status-cond').value = a.type === 'modify_headers' ? (c.status_code || '') : '';
+  setHeaderRows('rule-mod-hdr-rows', a.type === 'modify_headers' ? a.headers : null);
+
+  // Replace body
+  document.getElementById('rule-replace-status-cond').value = a.type === 'replace_body' ? (c.status_code || '') : '';
+  setCT('replace', a.type === 'replace_body' ? (a.content_type || '') : '');
+  document.getElementById('rule-replace-body').value        = a.type === 'replace_body' ? (a.body || '') : '';
+
+  updateRuleActionFields();
+  document.getElementById('rule-modal-overlay').classList.add('open');
+}
+
+function updateRuleActionFields() {
+  const type = document.getElementById('rule-action-type').value;
+  document.getElementById('rule-fields-mock').style.display           = type === 'mock'           ? '' : 'none';
+  document.getElementById('rule-fields-modify-headers').style.display = type === 'modify_headers' ? '' : 'none';
+  document.getElementById('rule-fields-replace-body').style.display   = type === 'replace_body'   ? '' : 'none';
+}
+
+function closeRuleModal() {
+  document.getElementById('rule-modal-overlay').classList.remove('open');
+}
+
+document.getElementById('rule-action-type').addEventListener('change', updateRuleActionFields);
+document.getElementById('rule-add-btn')     .addEventListener('click', () => openRuleModal(null));
+document.getElementById('rule-modal-close') .addEventListener('click', closeRuleModal);
+document.getElementById('rule-modal-cancel').addEventListener('click', closeRuleModal);
+document.getElementById('rule-modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('rule-modal-overlay')) closeRuleModal();
+});
+
+document.getElementById('rule-modal-save').addEventListener('click', async () => {
+  const type = document.getElementById('rule-action-type').value;
+
+  const condition = {
+    url_pattern:  document.getElementById('rule-url-pattern').value.trim() || undefined,
+    host:         document.getElementById('rule-host').value.trim()         || undefined,
+    method:       document.getElementById('rule-method').value              || undefined,
+    header_name:  document.getElementById('rule-header-name').value.trim() || undefined,
+    header_value: document.getElementById('rule-header-value').value.trim()|| undefined,
+  };
+
+  const action = { type };
+
+  if (type === 'mock') {
+    const sc = parseInt(document.getElementById('rule-mock-status').value, 10);
+    if (sc) action.status_code = sc;
+    const ct = getCT('mock');
+    if (ct) action.content_type = ct;
+    action.headers = readHeaderRows('rule-mock-hdr-rows');
+    action.body    = document.getElementById('rule-mock-body').value;
+  } else if (type === 'modify_headers') {
+    action.headers = readHeaderRows('rule-mod-hdr-rows');
+    const sc = parseInt(document.getElementById('rule-mod-status-cond').value, 10);
+    if (sc) condition.status_code = sc;
+  } else if (type === 'replace_body') {
+    const sc = parseInt(document.getElementById('rule-replace-status-cond').value, 10);
+    if (sc) condition.status_code = sc;
+    const ct = getCT('replace');
+    if (ct) action.content_type = ct;
+    action.body = document.getElementById('rule-replace-body').value;
+  }
+
+  const rule = {
+    id:        _editingRuleId || '',
+    name:      document.getElementById('rule-name').value.trim() || 'Regla',
+    enabled:   true,
+    condition: cleanObj(condition),
+    action:    cleanObj(action),
+  };
+
+  const statusEl = document.getElementById('rule-modal-status');
+  statusEl.textContent = 'Guardando…';
+  statusEl.style.color = 'var(--sub)';
+
+  try {
+    const isNew = !_editingRuleId;
+    const res = await fetch(isNew ? '/api/rules' : `/api/rules/${_editingRuleId}`, {
+      method:  isNew ? 'POST' : 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(rule),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || res.statusText);
+    }
+    closeRuleModal();
+    loadRules();
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.style.color = 'var(--s5)';
+  }
+});
+
+function cleanObj(o) {
+  const out = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (v !== undefined && v !== null && v !== '') out[k] = v;
+  }
+  return out;
+}
+
+// ── Rule from flow (context menu + detail button) ─────────────────────────────
+let _ctxFlowId = null;
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+async function openRuleFromFlow(flowId, preset) {
+  const summary = flows.get(flowId);
+  if (!summary) return;
+
+  const path   = summary.path   || '/';
+  const host   = summary.host   || '';
+  const method = summary.method || '';
+
+  let detail = null;
+  if (preset === 'mock') {
+    try {
+      const res = await fetch(`/api/flows/${flowId}`);
+      detail    = await res.json();
+    } catch {}
+  }
+
+  const isBlock  = preset === 'block';
+  const isMock   = preset === 'mock';
+
+  const rule = {
+    id: '',
+    name: isBlock ? `Bloquear ${method} ${path}`
+        : isMock  ? `Mock ${method} ${path}`
+        : '',
+    enabled: true,
+    condition: {
+      method,
+      host,
+      url_pattern: escapeRegex(path),
+    },
+    action: {
+      type:         isBlock ? 'block' : isMock ? 'mock' : 'block',
+      status_code:  isMock && detail ? (detail.status || 200) : undefined,
+      content_type: isMock && detail ? (detail.content_type || 'application/json') : undefined,
+      body:         isMock && detail ? (detail.resp_body || '') : undefined,
+    },
+  };
+
+  openRuleModal(rule);
+}
+
+// Context menu — right-click on flow list items
+const ctxMenu = document.getElementById('ctx-menu');
+
+document.getElementById('flow-list').addEventListener('contextmenu', e => {
+  const item = e.target.closest('.flow-item');
+  if (!item) return;
+  e.preventDefault();
+  _ctxFlowId = item.id.replace('fi-', '');
+
+  const x = Math.min(e.clientX, window.innerWidth  - 230);
+  const y = Math.min(e.clientY, window.innerHeight - 130);
+  ctxMenu.style.left    = x + 'px';
+  ctxMenu.style.top     = y + 'px';
+  ctxMenu.style.display = 'block';
+});
+
+function closeCtxMenu() { ctxMenu.style.display = 'none'; }
+
+document.addEventListener('click',       closeCtxMenu);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCtxMenu(); });
+
+document.getElementById('ctx-mock')  .addEventListener('click', () => openRuleFromFlow(_ctxFlowId, 'mock'));
+document.getElementById('ctx-block') .addEventListener('click', () => openRuleFromFlow(_ctxFlowId, 'block'));
+document.getElementById('ctx-custom').addEventListener('click', () => openRuleFromFlow(_ctxFlowId, 'custom'));
+
+// Detail panel "⚡ Regla" button
+document.getElementById('rule-from-detail-btn').addEventListener('click', () => {
+  if (selectedId) openRuleFromFlow(selectedId, 'custom');
+});
+
+document.getElementById('replay-btn').addEventListener('click', () => {
+  if (selectedId) replayFlow(selectedId);
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 setupExportModal();
