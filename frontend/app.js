@@ -193,15 +193,7 @@ function renderRespCol(data, state) {
   col.innerHTML = '';
 
   if (state === 'paused') {
-    const banner = document.createElement('div');
-    banner.className = 'paused-banner';
-    banner.innerHTML = `
-      <div class="paused-banner-title">⏸ Petición en pausa</div>
-      <div class="paused-banner-actions">
-        <button class="btn btn-green" onclick="resumeFlow('${esc(data.id)}')">▶ Reanudar</button>
-        <button class="btn btn-red"   onclick="blockFlow('${esc(data.id)}')">✕ Bloquear</button>
-      </div>`;
-    col.appendChild(banner);
+    col.appendChild(buildPausedEditor(data));
     return;
   }
 
@@ -298,6 +290,80 @@ document.getElementById('intercept-cb').addEventListener('change', async e => {
     body: JSON.stringify({ enabled: e.target.checked }),
   });
 });
+
+function buildPausedEditor(data) {
+  const banner = document.createElement('div');
+  banner.className = 'paused-banner';
+
+  const title = document.createElement('div');
+  title.className = 'paused-banner-title';
+  title.textContent = '⏸ Petición en pausa — edita y reanuda';
+  banner.appendChild(title);
+
+  // Headers
+  const hdrLabel = document.createElement('div');
+  hdrLabel.className = 'paused-edit-label';
+  const hdrAddBtn = document.createElement('button');
+  hdrAddBtn.className = 'btn hdr-add-btn';
+  hdrAddBtn.textContent = '+ Header';
+  hdrAddBtn.addEventListener('click', () => addHeaderRow('intercept-hdr-rows', '', ''));
+  hdrLabel.append(Object.assign(document.createElement('span'), {textContent: 'Headers'}), hdrAddBtn);
+  banner.appendChild(hdrLabel);
+
+  const hdrRows = document.createElement('div');
+  hdrRows.className = 'hdr-rows';
+  hdrRows.id = 'intercept-hdr-rows';
+  banner.appendChild(hdrRows);
+  for (const [k, v] of Object.entries(data.req_headers || {})) {
+    addHeaderRow('intercept-hdr-rows', k, v);
+  }
+
+  // Body
+  const bodyLabel = document.createElement('div');
+  bodyLabel.className = 'paused-edit-label';
+  bodyLabel.append(Object.assign(document.createElement('span'), {textContent: 'Body'}));
+  banner.appendChild(bodyLabel);
+
+  const bodyTA = document.createElement('textarea');
+  bodyTA.className = 'intercept-body-ta';
+  bodyTA.id = 'intercept-body';
+  bodyTA.value = data.req_body || '';
+  banner.appendChild(bodyTA);
+
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'paused-banner-actions';
+  actions.style.marginTop = '10px';
+
+  const withBtn = document.createElement('button');
+  withBtn.className = 'btn btn-green';
+  withBtn.textContent = '▶ Reanudar con cambios';
+  withBtn.addEventListener('click', () => resumeFlowWith(data.id));
+
+  const plainBtn = document.createElement('button');
+  plainBtn.className = 'btn';
+  plainBtn.textContent = '▶ Reanudar';
+  plainBtn.addEventListener('click', () => resumeFlow(data.id));
+
+  const blockBtn = document.createElement('button');
+  blockBtn.className = 'btn btn-red';
+  blockBtn.textContent = '✕ Bloquear';
+  blockBtn.addEventListener('click', () => blockFlow(data.id));
+
+  actions.append(withBtn, plainBtn, blockBtn);
+  banner.appendChild(actions);
+  return banner;
+}
+
+async function resumeFlowWith(id) {
+  const headers = readHeaderRows('intercept-hdr-rows') || {};
+  const body = document.getElementById('intercept-body').value;
+  await fetch(`/api/flows/${id}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ headers, body }),
+  });
+}
 
 async function resumeFlow(id) {
   await fetch(`/api/flows/${id}/resume`, { method: 'POST' });

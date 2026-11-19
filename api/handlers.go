@@ -86,7 +86,12 @@ func (s *Server) handleGetFlow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
-	s.intercept.Resume(r.PathValue("id"))
+	var req struct {
+		Headers map[string]string `json:"headers"`
+		Body    string            `json:"body"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	s.intercept.Resume(r.PathValue("id"), req.Headers, []byte(req.Body))
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
