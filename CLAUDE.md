@@ -60,17 +60,19 @@ The user must trust `mitmproxy-ca-cert.pem` in their OS/browser to intercept HTT
 ## REST API
 
 ```
-GET  /api/jvms                    list running JVMs
-POST /api/jvms/{pid}/attach       attach proxy agent to JVM
-GET  /api/flows                   list all flows (summary)
-GET  /api/flows/{id}              full flow detail (headers + body)
-POST /api/flows/{id}/resume       resume paused flow
-POST /api/flows/{id}/block        block paused flow (returns 403)
-POST /api/intercept               {"enabled": bool}
-GET  /api/cert                    download CA cert as PEM
-GET  /api/settings                get current config + detected JDKs
-POST /api/settings                partial update (java_bin, auto_attach, auto_attach_patterns); omitted fields untouched
-GET  /ws                          WebSocket — real-time flow events
+GET    /api/jvms                  list running JVMs
+POST   /api/jvms/{pid}/attach     attach proxy agent to JVM
+GET    /api/flows                 list all flows (summary)
+DELETE /api/flows                 clear all flows (paused ones are resumed)
+GET    /api/flows/{id}            full flow detail (headers + body)
+DELETE /api/flows/{id}            delete one flow (resumed first if paused); 404 if missing
+POST   /api/flows/{id}/resume     resume paused flow
+POST   /api/flows/{id}/block      block paused flow (returns 403)
+POST   /api/intercept             {"enabled": bool}
+GET    /api/cert                  download CA cert as PEM
+GET    /api/settings              get current config + detected JDKs
+POST   /api/settings              partial update (java_bin, auto_attach, auto_attach_patterns); omitted fields untouched
+GET    /ws                        WebSocket — real-time flow events
 ```
 
 ## WebSocket message types
@@ -84,6 +86,8 @@ GET  /ws                          WebSocket — real-time flow events
 | `flow_done` | server→client | `id, state:"blocked"\|"error"` |
 | `intercept_changed` | server→client | `enabled: bool` |
 | `settings_changed` | server→client | `java_bin, auto_attach, auto_attach_patterns` |
+| `flow_deleted` | server→client | `id` |
+| `flows_cleared` | server→client | — |
 | `jvm_attached` | server→client | `pid` |
 | `jvm_auto_attached` | server→client | `pid, name` |
 

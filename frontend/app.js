@@ -41,12 +41,19 @@ function onMsg(msg) {
     case 'flow_paused':
     case 'flow_resumed':
     case 'flow_done': {
-      const prev = flows.get(msg.id) || {};
-      flows.set(msg.id, { ...prev, ...msg });
+      // Ignore late events for flows that were deleted or cleared.
+      if (!flows.has(msg.id)) break;
+      flows.set(msg.id, { ...flows.get(msg.id), ...msg });
       refreshFlowItem(msg.id);
       if (selectedId === msg.id) renderDetail(msg.id);
       break;
     }
+    case 'flow_deleted':
+      removeFlowFromUI(msg.id);
+      break;
+    case 'flows_cleared':
+      clearFlowsUI();
+      break;
     case 'intercept_changed':
       document.getElementById('intercept-cb').checked = msg.enabled;
       break;
@@ -101,7 +108,12 @@ function buildFlowItem(id, f) {
       <span class="flow-item-host">${esc(host)}</span>
     </span>
     <span class="status-badge ${statusClass(f)}">${statusText(f)}</span>
+    <button class="flow-item-del" title="Eliminar" aria-label="Eliminar flow" data-testid="flow-item-delete-button">✕</button>
   `;
+  el.querySelector('.flow-item-del').addEventListener('click', e => {
+    e.stopPropagation();
+    deleteFlow(id);
+  });
   return el;
 }
 
@@ -267,17 +279,56 @@ async function blockFlow(id) {
   await fetch(`/api/flows/${id}/block`, { method: 'POST' });
 }
 
-// ── Clear ─────────────────────────────────────────────────────────────────────
-document.getElementById('clear-btn').addEventListener('click', () => {
-  flows.clear();
+// ── Delete / clear ────────────────────────────────────────────────────────────
+// The server confirms via flow_deleted / flows_cleared; the UI updates there so
+// every open tab stays in sync.
+async function deleteFlow(id) {
+  try {
+    const res = await fetch('/api/flows/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!res.ok && res.status !== 404) throw new Error(res.statusText);
+    if (res.status === 404) removeFlowFromUI(id);
+  } catch (e) {
+    showToast('No se pudo eliminar el flow: ' + e.message);
+  }
+}
+
+async function clearAllFlows() {
+  if (!flows.size) return;
+  const count = flows.size;
+  const label = count === 1 ? 'el flow capturado' : `los ${count} flows capturados`;
+  const ok = await confirmToast(`¿Eliminar ${label}? Los pausados se reanudan.`, 'Eliminar');
+  if (!ok) return;
+  try {
+    const res = await fetch('/api/flows', { method: 'DELETE' });
+    if (!res.ok) throw new Error(res.statusText);
+    showToast(count === 1 ? '1 flow eliminado' : `${count} flows eliminados`);
+  } catch (e) {
+    showToast('No se pudo limpiar la lista: ' + e.message);
+  }
+}
+
+function resetDetail() {
   selectedId = null;
   _copyData  = null;
-  document.getElementById('flow-list').innerHTML = '';
   document.getElementById('detail-empty').style.display   = '';
   document.getElementById('detail-content').style.display = 'none';
   document.getElementById('copy-wrap').style.display      = 'none';
   document.getElementById('rule-wrap').style.display      = 'none';
-});
+}
+
+function removeFlowFromUI(id) {
+  flows.delete(id);
+  document.getElementById('fi-' + id)?.remove();
+  if (selectedId === id) resetDetail();
+}
+
+function clearFlowsUI() {
+  flows.clear();
+  document.getElementById('flow-list').innerHTML = '';
+  resetDetail();
+}
+
+document.getElementById('clear-btn').addEventListener('click', clearAllFlows);
 
 // ── JVM grid (Interceptar view) ───────────────────────────────────────────────
 async function loadJVMs() {
@@ -685,6 +736,43 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2300);
 }
 
+// confirmToast shows a toast with confirm/cancel actions and resolves to true
+// only when the user confirms. Escape, Cancelar or the timeout resolve false.
+function confirmToast(msg, confirmLabel, timeoutMs = 8000) {
+  document.querySelector('.toast-confirm')?.remove();
+  return new Promise(resolve => {
+    const t = document.createElement('div');
+    t.className = 'toast-confirm';
+    t.setAttribute('role', 'alertdialog');
+    t.setAttribute('aria-live', 'assertive');
+    t.dataset.testid = 'confirm-toast';
+    t.innerHTML = `
+      <span class="toast-confirm-msg"></span>
+      <div class="toast-confirm-actions">
+        <button class="btn" data-act="cancel" data-testid="confirm-toast-cancel-button">Cancelar</button>
+        <button class="btn btn-danger" data-act="ok" data-testid="confirm-toast-confirm-button"></button>
+      </div>`;
+    t.querySelector('.toast-confirm-msg').textContent = msg;
+    t.querySelector('[data-act=ok]').textContent = confirmLabel;
+
+    const timer = setTimeout(() => close(false), timeoutMs);
+    const onKey = e => { if (e.key === 'Escape') close(false); };
+    function close(result) {
+      clearTimeout(timer);
+      document.removeEventListener('keydown', onKey);
+      t.remove();
+      resolve(result);
+    }
+    t.addEventListener('click', e => {
+      const act = e.target.closest('[data-act]')?.dataset.act;
+      if (act) close(act === 'ok');
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(t);
+    t.querySelector('[data-act=cancel]').focus();
+  });
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function esc(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1068,7 +1156,7 @@ document.getElementById('flow-list').addEventListener('contextmenu', e => {
   _ctxFlowId = item.id.replace('fi-', '');
 
   const x = Math.min(e.clientX, window.innerWidth  - 230);
-  const y = Math.min(e.clientY, window.innerHeight - 130);
+  const y = Math.min(e.clientY, window.innerHeight - 190);
   ctxMenu.style.left    = x + 'px';
   ctxMenu.style.top     = y + 'px';
   ctxMenu.style.display = 'block';
@@ -1082,6 +1170,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCtxMenu
 document.getElementById('ctx-mock')  .addEventListener('click', () => openRuleFromFlow(_ctxFlowId, 'mock'));
 document.getElementById('ctx-block') .addEventListener('click', () => openRuleFromFlow(_ctxFlowId, 'block'));
 document.getElementById('ctx-custom').addEventListener('click', () => openRuleFromFlow(_ctxFlowId, 'custom'));
+document.getElementById('ctx-delete').addEventListener('click', () => deleteFlow(_ctxFlowId));
 
 // Detail panel "⚡ Regla" button
 document.getElementById('rule-from-detail-btn').addEventListener('click', () => {
