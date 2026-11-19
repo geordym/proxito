@@ -128,4 +128,3 @@ func flatHeaders(h map[string][]string) map[string]string {
 	}
 	return out
 }
-
