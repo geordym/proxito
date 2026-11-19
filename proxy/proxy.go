@@ -12,11 +12,12 @@ type Addon struct {
 	gmp.BaseAddon
 	store     *Store
 	intercept *InterceptHub
+	rules     *RuleEngine
 	broadcast func(any)
 }
 
-func NewAddon(store *Store, intercept *InterceptHub, broadcast func(any)) *Addon {
-	return &Addon{store: store, intercept: intercept, broadcast: broadcast}
+func NewAddon(store *Store, intercept *InterceptHub, rules *RuleEngine, broadcast func(any)) *Addon {
+	return &Addon{store: store, intercept: intercept, rules: rules, broadcast: broadcast}
 }
 
 func (a *Addon) Request(f *gmp.Flow) {
@@ -53,6 +54,33 @@ func (a *Addon) Request(f *gmp.Flow) {
 		"status":     0,
 	})
 
+	if a.rules != nil {
+		switch a.rules.ApplyRequest(f) {
+		case ActionBlock:
+			a.store.SetBlocked(id)
+			a.broadcast(map[string]any{"type": "flow_done", "id": id, "state": string(StateBlocked)})
+			return
+		case ActionMock:
+			ct := f.Response.Header.Get("Content-Type")
+			a.store.SetResponse(id, f.Response.StatusCode, f.Response.Header.Clone(), f.Response.Body, ct)
+			a.broadcast(map[string]any{
+				"type":         "flow_response",
+				"id":           id,
+				"method":       pf.Method,
+				"url":          pf.URL,
+				"host":         pf.Host,
+				"path":         pf.Path,
+				"status":       f.Response.StatusCode,
+				"content_type": ct,
+				"size":         len(f.Response.Body),
+				"started_at":   pf.StartedAt,
+				"done_at":      time.Now(),
+				"state":        string(StateDone),
+			})
+			return
+		}
+	}
+
 	if a.intercept.Enabled() {
 		a.store.SetPaused(id)
 		a.broadcast(map[string]any{"type": "flow_paused", "id": id, "state": string(StatePaused)})
@@ -75,6 +103,9 @@ func (a *Addon) Request(f *gmp.Flow) {
 func (a *Addon) Response(f *gmp.Flow) {
 	if f.Response == nil {
 		return
+	}
+	if a.rules != nil {
+		a.rules.ApplyResponse(f)
 	}
 	id := f.Id.String()
 
