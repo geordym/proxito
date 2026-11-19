@@ -26,6 +26,7 @@ proxito/
 │   └── ws.go            # WebSocket Hub (gorilla/websocket)
 ├── jvm/
 │   ├── manager.go       # List JVMs, Attach via java agent, tools.jar detection
+│   ├── autoattach.go    # watch list + 5s poller that re-attaches restarted JVMs by name
 │   └── detect.go        # DetectJDKs, BestJava — scans ~/.jdks/ + OS paths
 ├── config/
 │   └── config.go        # Config{JavaBin,ProxyHost,ProxyPort}, Load/Save ~/.proxito/settings.json
@@ -52,7 +53,7 @@ proxito/
 | `mitmproxy-ca.pem` | go-mitmproxy — combined CA cert+key (internal) |
 | `mitmproxy-ca-cert.pem` | go-mitmproxy — cert only, served at `GET /api/cert` |
 | `http-proxy-agent.jar` | extracted from embedded binary on first run (SHA-256 checked) |
-| `settings.json` | `config.Save()` — persists JavaBin, ProxyHost, ProxyPort |
+| `settings.json` | `config.Save()` — persists JavaBin, ProxyHost, ProxyPort, AutoAttach, AutoAttachPatterns |
 
 The user must trust `mitmproxy-ca-cert.pem` in their OS/browser to intercept HTTPS.
 
@@ -68,7 +69,7 @@ POST /api/flows/{id}/block        block paused flow (returns 403)
 POST /api/intercept               {"enabled": bool}
 GET  /api/cert                    download CA cert as PEM
 GET  /api/settings                get current config + detected JDKs
-POST /api/settings                save config (java_bin, proxy_host, proxy_port)
+POST /api/settings                partial update (java_bin, auto_attach, auto_attach_patterns); omitted fields untouched
 GET  /ws                          WebSocket — real-time flow events
 ```
 
@@ -82,8 +83,9 @@ GET  /ws                          WebSocket — real-time flow events
 | `flow_resumed` | server→client | `id, state:"active"` |
 | `flow_done` | server→client | `id, state:"blocked"\|"error"` |
 | `intercept_changed` | server→client | `enabled: bool` |
-| `settings_changed` | server→client | `java_bin` |
+| `settings_changed` | server→client | `java_bin, auto_attach, auto_attach_patterns` |
 | `jvm_attached` | server→client | `pid` |
+| `jvm_auto_attached` | server→client | `pid, name` |
 
 `flow_response` and state messages are **merged** (not replaced) into the existing flow entry via `Object.assign` so `started_at` from `flow_request` is preserved for duration calculation.
 

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"sync"
 
 	"proxito/jvm"
 	"proxito/proxy"
@@ -19,6 +20,7 @@ type Server struct {
 	proxyHost        string
 	proxyPort        string
 	cfgDir           string
+	cfgMu            sync.Mutex
 	jdks             []jvm.JDKInfo
 	javaAutoDetected bool   // true if java was picked automatically on this run
 	javaAutoPath     string // the path that was auto-selected

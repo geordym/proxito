@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"embed"
 	"flag"
@@ -71,6 +72,7 @@ func main() {
 	store     := proxy.NewStore(1000)
 	intercept := proxy.NewInterceptHub()
 	jvmMgr   := jvm.New(agentJar, cfg.JavaBin)
+	jvmMgr.SetAutoAttach(cfg.AutoAttach, cfg.AutoAttachPatterns)
 
 	// 6. Create the MITM proxy (go-mitmproxy manages CA cert in proxitoDir)
 	proxyAddr := *proxyHost + ":" + *proxyPort
@@ -93,6 +95,8 @@ func main() {
 		autoDetected, autoPath,
 		frontendFS,
 	)
+
+	srv.StartAutoAttach(context.Background())
 
 	// 8. Wire the addon (broadcast → WebSocket hub)
 	gmpProxy.AddAddon(proxy.NewAddon(store, intercept, func(msg any) {
