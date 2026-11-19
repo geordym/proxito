@@ -50,6 +50,16 @@ function onMsg(msg) {
     case 'intercept_changed':
       document.getElementById('intercept-cb').checked = msg.enabled;
       break;
+    case 'jvm_auto_attached':
+      showToast(`Auto-attached ${msg.name} (PID ${msg.pid})`);
+      loadJVMs();
+      break;
+    case 'settings_changed':
+      if (Array.isArray(msg.auto_attach_patterns)) {
+        renderAutoAttach(msg.auto_attach, msg.auto_attach_patterns);
+        loadJVMs();
+      }
+      break;
   }
 }
 
@@ -303,6 +313,7 @@ function renderJVMGrid(jvms) {
           <div class="jvm-card-name">${esc(name)}</div>
           <div class="jvm-card-pid">PID ${esc(String(j.pid))}</div>
         </div>
+        ${j.watched ? `<span class="badge badge-auto" title="En watch list: ${esc(j.name)}" data-testid="jvm-card-auto-badge">auto</span>` : ''}
       </div>
       <div class="jvm-card-desc">${esc(j.description || j.desc || '')}</div>
       ${j.attached
@@ -366,6 +377,7 @@ async function loadSettings() {
     document.getElementById('java-manual').value = data.java_bin || '';
     document.getElementById('proxy-host').value  = data.proxy_host || '127.0.0.1';
     document.getElementById('proxy-port').value  = data.proxy_port || '8080';
+    renderAutoAttach(data.auto_attach, data.auto_attach_patterns || []);
   } catch (e) {
     setStatus('Error al cargar ajustes: ' + e.message, 'var(--s5)');
   }
@@ -434,6 +446,49 @@ document.getElementById('settings-save').addEventListener('click', async () => {
     setStatus('Error: ' + e.message, 'var(--s5)');
   }
 });
+
+// ── Auto-attach ───────────────────────────────────────────────────────────────
+let autoAttachPatterns = [];
+
+function renderAutoAttach(enabled, patterns) {
+  autoAttachPatterns = patterns || [];
+  document.getElementById('auto-attach-cb').checked = !!enabled;
+  const list = document.getElementById('auto-attach-list');
+  if (!autoAttachPatterns.length) {
+    list.innerHTML = '<div class="aa-empty">Ningún proceso vigilado. Adjunta un JVM con auto-attach activo para agregarlo.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  autoAttachPatterns.forEach(name => {
+    const item = document.createElement('div');
+    item.className = 'aa-item';
+    item.innerHTML = `
+      <span class="aa-item-name">${esc(name)}</span>
+      <button class="aa-remove" title="Quitar del watch list" aria-label="Quitar ${esc(name)}" data-testid="settings-auto-attach-remove-button">✕</button>
+    `;
+    item.querySelector('.aa-remove').addEventListener('click',
+      () => saveAutoAttach({ auto_attach_patterns: autoAttachPatterns.filter(p => p !== name) }));
+    list.appendChild(item);
+  });
+}
+
+async function saveAutoAttach(update) {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || res.statusText); }
+    // UI refresh arrives via the settings_changed WebSocket broadcast.
+  } catch (e) {
+    setStatus('Error: ' + e.message, 'var(--s5)');
+    loadSettings();
+  }
+}
+
+document.getElementById('auto-attach-cb').addEventListener('change', e =>
+  saveAutoAttach({ auto_attach: e.target.checked }));
 
 function setStatus(msg, color) {
   const el = document.getElementById('settings-status');

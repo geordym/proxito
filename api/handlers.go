@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 
@@ -38,7 +39,24 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.Broadcast(map[string]any{"type": "jvm_attached", "pid": pid})
+	s.watchAttached(pid)
 	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+// watchAttached adds a manually attached JVM to the auto-attach watch list
+// when auto-attach is enabled, and persists the change.
+func (s *Server) watchAttached(pid string) {
+	if enabled, _ := s.jvmMgr.AutoAttach(); !enabled {
+		return
+	}
+	j, ok := s.jvmMgr.FindByPID(pid)
+	if !ok || !s.jvmMgr.WatchIfEnabled(j.Name) {
+		return
+	}
+	if err := s.saveConfig(); err != nil {
+		log.Printf("auto-attach: no pude persistir el watch list: %v", err)
+	}
+	s.broadcastSettings()
 }
 
 func (s *Server) handleListFlows(w http.ResponseWriter, r *http.Request) {

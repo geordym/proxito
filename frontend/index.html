@@ -173,6 +173,8 @@
       font-size: 20px; flex-shrink: 0;
     }
     .jvm-card.attached .jvm-card-icon { border-color: var(--teal); background: var(--teal-dim); }
+    .jvm-card-top > div:last-child { min-width: 0; flex: 1; }
+    .jvm-card-top .badge-auto { align-self: flex-start; }
     .jvm-card-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .jvm-card-pid  { font-size: 11px; color: var(--sub); margin-top: 2px; font-family: monospace; }
 
@@ -528,6 +530,21 @@
     .badge-rec  { color: var(--s2); background: rgba(76,175,130,.1);  border-color: rgba(76,175,130,.3); }
     .badge-auto { color: var(--teal); background: var(--teal-dim); border-color: var(--teal-glow); }
 
+    .aa-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; min-height: 44px; }
+    .aa-toggle input[type=checkbox] { accent-color: var(--teal); width: 1rem; height: 1rem; flex-shrink: 0; }
+    .aa-list { display: flex; flex-direction: column; gap: 4px; }
+    .aa-item {
+      display: flex; align-items: center; gap: 10px; min-width: 0;
+      padding: 4px 4px 4px 12px; border: 1px solid var(--border); border-radius: 6px;
+    }
+    .aa-item-name { flex: 1; min-width: 0; font-family: monospace; font-size: 12px; overflow-wrap: anywhere; }
+    .aa-remove {
+      min-width: 44px; min-height: 44px; background: none; border: none; border-radius: 5px;
+      color: var(--sub); cursor: pointer; font-size: 14px;
+    }
+    .aa-remove:hover { color: var(--s5); background: var(--raised); }
+    .aa-empty { font-size: 12px; color: var(--sub); }
+
     .settings-footer {
       display: flex; align-items: center; justify-content: flex-end; gap: 12px;
     }
@@ -821,6 +838,19 @@
           </div>
         </div>
         <div class="s-hint" style="margin-top:8px">Reinicia Proxito para que los cambios de puerto tomen efecto.</div>
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <div class="settings-card-title">Auto-attach</div>
+      <div class="settings-card-body">
+        <label class="aa-toggle">
+          <input type="checkbox" id="auto-attach-cb" data-testid="settings-auto-attach-checkbox">
+          Auto-attach al reiniciar
+        </label>
+        <div class="s-hint">Al adjuntar un JVM, Proxito recuerda su nombre y se re-adjunta solo cuando el proceso reaparece con otro PID.</div>
+        <div class="s-label s-gap">Procesos vigilados</div>
+        <div class="aa-list" id="auto-attach-list" data-testid="settings-auto-attach-list"></div>
       </div>
     </div>
 
