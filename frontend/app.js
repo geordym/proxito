@@ -173,8 +173,9 @@ async function renderDetail(id) {
 
     // expose data to copy dropdown / rule button
     _copyData = data;
-    document.getElementById('copy-wrap').style.display = '';
-    document.getElementById('rule-wrap').style.display = '';
+    document.getElementById('copy-wrap').style.display   = '';
+    document.getElementById('rule-wrap').style.display   = '';
+    document.getElementById('replay-wrap').style.display = '';
   } catch {
     document.getElementById('req-col').innerHTML  = '<span class="body-empty">Error cargando detalle.</span>';
     document.getElementById('resp-col').innerHTML = '';
@@ -372,6 +373,20 @@ async function blockFlow(id) {
   await fetch(`/api/flows/${id}/block`, { method: 'POST' });
 }
 
+async function replayFlow(id) {
+  const btn = document.getElementById('replay-btn');
+  btn.disabled = true;
+  btn.textContent = '↻ Enviando…';
+  try {
+    const res  = await fetch(`/api/flows/${id}/replay`, { method: 'POST' });
+    const data = await res.json();
+    if (data.id) selectFlow(data.id);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '↻ Reenviar';
+  }
+}
+
 // ── Clear ─────────────────────────────────────────────────────────────────────
 document.getElementById('clear-btn').addEventListener('click', () => {
   flows.clear();
@@ -382,6 +397,7 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   document.getElementById('detail-content').style.display = 'none';
   document.getElementById('copy-wrap').style.display      = 'none';
   document.getElementById('rule-wrap').style.display      = 'none';
+  document.getElementById('replay-wrap').style.display    = 'none';
 });
 
 // ── JVM grid (Interceptar view) ───────────────────────────────────────────────
@@ -1143,6 +1159,10 @@ document.getElementById('ctx-custom').addEventListener('click', () => openRuleFr
 // Detail panel "⚡ Regla" button
 document.getElementById('rule-from-detail-btn').addEventListener('click', () => {
   if (selectedId) openRuleFromFlow(selectedId, 'custom');
+});
+
+document.getElementById('replay-btn').addEventListener('click', () => {
+  if (selectedId) replayFlow(selectedId);
 });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
