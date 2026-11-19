@@ -70,6 +70,7 @@ func main() {
 	// 5. Build components
 	store     := proxy.NewStore(1000)
 	intercept := proxy.NewInterceptHub()
+	rules     := proxy.NewRuleEngine(proxitoDir)
 	jvmMgr   := jvm.New(agentJar, cfg.JavaBin)
 
 	// 6. Create the MITM proxy (go-mitmproxy manages CA cert in proxitoDir)
@@ -88,14 +89,14 @@ func main() {
 
 	// 7. Build UI server
 	srv := api.NewServer(
-		store, intercept, jvmMgr,
+		store, intercept, rules, jvmMgr,
 		certPath, *proxyHost, *proxyPort, proxitoDir,
 		autoDetected, autoPath,
 		frontendFS,
 	)
 
 	// 8. Wire the addon (broadcast → WebSocket hub)
-	gmpProxy.AddAddon(proxy.NewAddon(store, intercept, func(msg any) {
+	gmpProxy.AddAddon(proxy.NewAddon(store, intercept, rules, func(msg any) {
 		srv.Hub().Broadcast(msg)
 	}))
 
