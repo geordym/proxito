@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 
@@ -38,7 +39,24 @@ func (s *Server) handleAttach(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.hub.Broadcast(map[string]any{"type": "jvm_attached", "pid": pid})
+	s.watchAttached(pid)
 	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+// watchAttached adds a manually attached JVM to the auto-attach watch list
+// when auto-attach is enabled, and persists the change.
+func (s *Server) watchAttached(pid string) {
+	if enabled, _ := s.jvmMgr.AutoAttach(); !enabled {
+		return
+	}
+	j, ok := s.jvmMgr.FindByPID(pid)
+	if !ok || !s.jvmMgr.WatchIfEnabled(j.Name) {
+		return
+	}
+	if err := s.saveConfig(); err != nil {
+		log.Printf("auto-attach: no pude persistir el watch list: %v", err)
+	}
+	s.broadcastSettings()
 }
 
 func (s *Server) handleListFlows(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +105,28 @@ func (s *Server) handleGetFlow(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	s.intercept.Resume(r.PathValue("id"))
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+// handleDeleteFlow removes one flow. A paused flow is resumed first so the
+// client connection waiting on it is not left hanging.
+func (s *Server) handleDeleteFlow(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !s.store.Delete(id) {
+		jsonErr(w, "not found", http.StatusNotFound)
+		return
+	}
+	s.intercept.Resume(id)
+	s.hub.Broadcast(map[string]any{"type": "flow_deleted", "id": id})
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
+// handleClearFlows removes every flow, resuming any that were paused.
+func (s *Server) handleClearFlows(w http.ResponseWriter, r *http.Request) {
+	for _, id := range s.store.Clear() {
+		s.intercept.Resume(id)
+	}
+	s.hub.Broadcast(map[string]any{"type": "flows_cleared"})
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 

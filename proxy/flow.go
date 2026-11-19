@@ -81,6 +81,36 @@ func (s *Store) List() []*Flow {
 	return out
 }
 
+// Delete removes the flow with the given id and reports whether it existed.
+func (s *Store) Delete(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.byID[id]; !ok {
+		return false
+	}
+	delete(s.byID, id)
+	for i, f := range s.flows {
+		if f.ID == id {
+			s.flows = append(s.flows[:i], s.flows[i+1:]...)
+			break
+		}
+	}
+	return true
+}
+
+// Clear removes every flow and returns the ids that were removed.
+func (s *Store) Clear() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, len(s.flows))
+	for i, f := range s.flows {
+		ids[i] = f.ID
+	}
+	s.flows = nil
+	s.byID = make(map[string]*Flow)
+	return ids
+}
+
 func (s *Store) SetPaused(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

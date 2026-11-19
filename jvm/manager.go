@@ -1,6 +1,7 @@
 package jvm
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,8 +14,10 @@ import (
 // JVM represents a running Java process.
 type JVM struct {
 	PID      string `json:"pid"`
+	Name     string `json:"name"`
 	Desc     string `json:"desc"`
 	Attached bool   `json:"attached"`
+	Watched  bool   `json:"watched"`
 }
 
 // Manager handles JVM discovery and proxy attachment.
@@ -23,6 +26,8 @@ type Manager struct {
 	mu       sync.Mutex
 	javaBin  string
 	attached map[string]bool
+	inflight map[string]bool
+	watch    watchList
 	// tools.jar cache: empty string = not yet resolved
 	toolsJar  string
 	toolsDone bool
@@ -33,6 +38,7 @@ func New(agentJar, javaBin string) *Manager {
 		agentJar: agentJar,
 		javaBin:  javaBin,
 		attached: make(map[string]bool),
+		inflight: make(map[string]bool),
 	}
 }
 
@@ -79,20 +85,44 @@ func (m *Manager) List() ([]JVM, error) {
 			continue
 		}
 		desc := strings.TrimSpace(line[colon+1:])
+		name := ProcessName(desc)
 		if len(desc) > 90 {
 			desc = desc[:87] + "..."
 		}
 		jvms = append(jvms, JVM{
 			PID:      pid,
+			Name:     name,
 			Desc:     desc,
 			Attached: m.attached[pid],
+			Watched:  m.watch.contains(name),
 		})
 	}
 	return jvms, nil
 }
 
-// Attach injects the proxy into the JVM with the given pid.
+// ErrAttachInProgress is returned when another attach to the same pid is running.
+var ErrAttachInProgress = errors.New("attach en curso para ese PID")
+
+// Attach injects the proxy into the JVM with the given pid. It is idempotent:
+// attaching an already attached pid is a no-op.
 func (m *Manager) Attach(pid, host, port, certPath string) error {
+	m.mu.Lock()
+	if m.attached[pid] {
+		m.mu.Unlock()
+		return nil
+	}
+	if m.inflight[pid] {
+		m.mu.Unlock()
+		return ErrAttachInProgress
+	}
+	m.inflight[pid] = true
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		delete(m.inflight, pid)
+		m.mu.Unlock()
+	}()
+
 	javaBin, flags := m.javaAndFlags()
 	args := append(flags, "-jar", m.agentJar, pid, host, port, certPath)
 	cmd := exec.Command(javaBin, args...)

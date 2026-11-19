@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"sync"
 
 	"proxito/jvm"
 	"proxito/proxy"
@@ -20,6 +21,7 @@ type Server struct {
 	proxyHost        string
 	proxyPort        string
 	cfgDir           string
+	cfgMu            sync.Mutex
 	jdks             []jvm.JDKInfo
 	javaAutoDetected bool
 	javaAutoPath     string
@@ -69,7 +71,9 @@ func (s *Server) Handler() http.Handler {
 
 	// Flow API
 	mux.HandleFunc("GET /api/flows", s.handleListFlows)
+	mux.HandleFunc("DELETE /api/flows", s.handleClearFlows)
 	mux.HandleFunc("GET /api/flows/{id}", s.handleGetFlow)
+	mux.HandleFunc("DELETE /api/flows/{id}", s.handleDeleteFlow)
 	mux.HandleFunc("POST /api/flows/{id}/resume", s.handleResume)
 	mux.HandleFunc("POST /api/flows/{id}/block", s.handleBlock)
 

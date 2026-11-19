@@ -11,6 +11,10 @@ type Config struct {
 	JavaBin   string `json:"java_bin"`
 	ProxyHost string `json:"proxy_host"`
 	ProxyPort string `json:"proxy_port"`
+	// AutoAttach re-attaches watched JVMs when they restart with a new PID.
+	AutoAttach bool `json:"auto_attach"`
+	// AutoAttachPatterns are process names (main class or jar) to watch.
+	AutoAttachPatterns []string `json:"auto_attach_patterns"`
 }
 
 // Load reads settings from dir/settings.json. Missing fields keep their zero
