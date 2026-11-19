@@ -13,6 +13,7 @@ import (
 type Server struct {
 	store            *proxy.Store
 	intercept        *proxy.InterceptHub
+	rules            *proxy.RuleEngine
 	jvmMgr           *jvm.Manager
 	hub              *Hub
 	certPath         string
@@ -20,14 +21,15 @@ type Server struct {
 	proxyPort        string
 	cfgDir           string
 	jdks             []jvm.JDKInfo
-	javaAutoDetected bool   // true if java was picked automatically on this run
-	javaAutoPath     string // the path that was auto-selected
+	javaAutoDetected bool
+	javaAutoPath     string
 	frontendFS       embed.FS
 }
 
 func NewServer(
 	store *proxy.Store,
 	intercept *proxy.InterceptHub,
+	rules *proxy.RuleEngine,
 	jvmMgr *jvm.Manager,
 	certPath, proxyHost, proxyPort, cfgDir string,
 	javaAutoDetected bool,
@@ -37,6 +39,7 @@ func NewServer(
 	s := &Server{
 		store:            store,
 		intercept:        intercept,
+		rules:            rules,
 		jvmMgr:           jvmMgr,
 		hub:              NewHub(),
 		certPath:         certPath,
@@ -77,6 +80,12 @@ func (s *Server) Handler() http.Handler {
 	// Settings
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("POST /api/settings", s.handleSaveSettings)
+
+	// Rules
+	mux.HandleFunc("GET /api/rules", s.handleListRules)
+	mux.HandleFunc("POST /api/rules", s.handleCreateRule)
+	mux.HandleFunc("PUT /api/rules/{id}", s.handleUpdateRule)
+	mux.HandleFunc("DELETE /api/rules/{id}", s.handleDeleteRule)
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", s.hub.ServeWS)
