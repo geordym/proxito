@@ -11,7 +11,7 @@
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Send a report to **geordy.montenegro@pragma.com.co** with:
+Send a report to **ggeordymm@gmail.com** with:
 
 1. A short description of the vulnerability
 2. Steps to reproduce (or a proof-of-concept)
