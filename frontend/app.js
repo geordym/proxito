@@ -1,9 +1,5 @@
 'use strict';
 
-// ── Defaults (must match main.go flag defaults) ───────────────────────────────
-const DEFAULT_PROXY_HOST = '127.0.0.1';
-const DEFAULT_PROXY_PORT = '8020';
-
 // ── State ─────────────────────────────────────────────────────────────────────
 const flows = new Map();   // id → merged flow object
 let selectedId   = null;
@@ -416,7 +412,7 @@ async function loadSettings() {
     settingsData = data;
 
     // Update proxy address everywhere
-    const addr = `${data.proxy_host || DEFAULT_PROXY_HOST}:${data.proxy_port || DEFAULT_PROXY_PORT}`;
+    const addr = `${data.proxy_host}:${data.proxy_port}`;
     document.getElementById('proxy-addr').textContent        = addr;
     document.getElementById('proxy-banner-addr').textContent = addr;
 
@@ -431,8 +427,8 @@ async function loadSettings() {
 
     renderJDKList(data.jdks || [], data.java_bin);
     document.getElementById('java-manual').value = data.java_bin || '';
-    document.getElementById('proxy-host').value  = data.proxy_host || DEFAULT_PROXY_HOST;
-    document.getElementById('proxy-port').value  = data.proxy_port || DEFAULT_PROXY_PORT;
+    document.getElementById('proxy-host').value  = data.proxy_host;
+    document.getElementById('proxy-port').value  = data.proxy_port;
     renderAutoAttach(data.auto_attach, data.auto_attach_patterns || []);
     renderAliasCard(data);
     if (!data.alias_offered) showAliasModal(data);

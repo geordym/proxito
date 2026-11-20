@@ -801,7 +801,7 @@
     </button>
   </nav>
   <div class="header-right">
-    <span class="proxy-pill" id="proxy-addr">127.0.0.1:8020</span>
+    <span class="proxy-pill" id="proxy-addr">…</span>
     <a class="btn" href="/api/cert" download="proxito-ca.pem">↓ CA Cert</a>
   </div>
 </header>
@@ -820,7 +820,7 @@
     <span class="proxy-banner-icon">⇄</span>
     <div>
       <div class="proxy-banner-label">Dirección del proxy MITM</div>
-      <div class="proxy-banner-addr" id="proxy-banner-addr">127.0.0.1:8020</div>
+      <div class="proxy-banner-addr" id="proxy-banner-addr">…</div>
     </div>
   </div>
 
@@ -914,7 +914,7 @@
           </div>
           <div>
             <div class="s-label">Puerto</div>
-            <input class="settings-input" id="proxy-port" type="text" value="8020">
+            <input class="settings-input" id="proxy-port" type="text" value="">
           </div>
         </div>
         <div class="s-hint" style="margin-top:8px">Reinicia Proxito para que los cambios de puerto tomen efecto.</div>
@@ -1182,8 +1182,6 @@
   </div>
 </div>
 
-<script src="app.js"></script>
-
 <!-- ── ALIAS FIRST-LAUNCH MODAL ─────────────────── -->
 <div id="alias-modal-overlay">
   <div class="alias-modal">
@@ -1202,5 +1200,7 @@
     </div>
   </div>
 </div>
+
+<script src="app.js"></script>
 </body>
 </html>
