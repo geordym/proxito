@@ -207,7 +207,7 @@ function renderReqCol(data) {
   const col = document.getElementById('req-col');
   col.innerHTML = '';
   col.appendChild(headersBlock(data.req_headers));
-  col.appendChild(bodyBlock(data.req_body));
+  col.appendChild(bodyBlock(data.req_body, ctFrom(data.req_headers)));
 }
 
 function renderRespCol(data, state) {
@@ -238,7 +238,7 @@ function renderRespCol(data, state) {
   }
 
   col.appendChild(headersBlock(data.resp_headers));
-  col.appendChild(bodyBlock(data.resp_body));
+  col.appendChild(bodyBlock(data.resp_body, ctFrom(data.resp_headers)));
 }
 
 function headersBlock(headers) {
@@ -252,14 +252,63 @@ function headersBlock(headers) {
   return wrap;
 }
 
-function bodyBlock(body) {
+function ctFrom(headers) {
+  if (!headers) return '';
+  return (headers['Content-Type'] || headers['content-type'] || '').toLowerCase();
+}
+
+function highlightJSON(s) {
+  try {
+    const pretty = JSON.stringify(JSON.parse(s), null, 2);
+    return pretty.replace(
+      /("(?:\\.|[^\\"])*"(?:\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      m => {
+        const e = esc(m);
+        if (m[0] === '"') return m.endsWith(':') ? `<span class="hl-key">${e}</span>` : `<span class="hl-str">${e}</span>`;
+        if (m === 'true' || m === 'false') return `<span class="hl-bool">${m}</span>`;
+        if (m === 'null') return `<span class="hl-null">${m}</span>`;
+        return `<span class="hl-num">${m}</span>`;
+      }
+    );
+  } catch { return esc(s); }
+}
+
+function formatXML(s) {
+  let indent = 0;
+  const indented = s.replace(/>\s*</g, '>\n<').split('\n').map(raw => {
+    const node = raw.trim();
+    if (!node) return '';
+    if (node.startsWith('</')) indent = Math.max(0, indent - 1);
+    const line = '  '.repeat(indent) + node;
+    if (/^<[^!?\/]/.test(node) && !node.includes('</') && !node.endsWith('/>')) indent++;
+    return line;
+  }).filter(Boolean).join('\n');
+
+  return esc(indented).replace(/&lt;(.*?)&gt;/g, (_, inner) => {
+    const colored = inner
+      .replace(/([\w:.-]+=)(&quot;[^&]*&quot;)/g,
+        '<span class="hl-attr">$1</span><span class="hl-str">$2</span>')
+      .replace(/^(\/?!?[\w:.-]+)/, '<span class="hl-tag">$1</span>');
+    return `<span class="hl-punc">&lt;</span>${colored}<span class="hl-punc">&gt;</span>`;
+  });
+}
+
+function bodyBlock(body, ct) {
   const wrap = document.createElement('div');
   wrap.className = 'body-section';
   if (!body) {
     wrap.innerHTML = '<span class="body-empty">(sin cuerpo)</span>';
     return wrap;
   }
-  wrap.innerHTML = `<div class="section-title">Body</div><pre class="body-pre">${esc(prettyJSON(body))}</pre>`;
+  let html;
+  if (ct && ct.includes('json')) {
+    html = highlightJSON(body);
+  } else if (ct && (ct.includes('xml') || ct.includes('html'))) {
+    html = formatXML(body);
+  } else {
+    html = esc(body);
+  }
+  wrap.innerHTML = `<div class="section-title">Body</div><pre class="body-pre">${html}</pre>`;
   return wrap;
 }
 
@@ -800,9 +849,6 @@ function statusText(f) {
   return String(f.status);
 }
 
-function prettyJSON(s) {
-  try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
-}
 
 // Long package names have no spaces, so they can't wrap and get clipped.
 // A <wbr> after each dot lets them break at package boundaries.
