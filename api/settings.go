@@ -17,10 +17,15 @@ type settingsUpdate struct {
 	JavaBin            *string   `json:"java_bin"`
 	AutoAttach         *bool     `json:"auto_attach"`
 	AutoAttachPatterns *[]string `json:"auto_attach_patterns"`
+	AliasOffered       *bool     `json:"alias_offered"`
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 	autoAttach, patterns := s.jvmMgr.AutoAttach()
+	cfgFile, aliasSupported := shellConfigFile()
+	aliasCmd := aliasLine(s.projectDir)
+	aliasCreated := aliasSupported && aliasAlreadyExists(cfgFile)
+	aliasFile := cfgFile
 	jsonOK(w, map[string]any{
 		"java_bin":             s.jvmMgr.GetJavaBin(),
 		"proxy_host":           s.proxyHost,
@@ -30,6 +35,11 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 		"jdks":                 s.jdks,
 		"auto_attach":          autoAttach,
 		"auto_attach_patterns": patterns,
+		"alias_command":        aliasCmd,
+		"alias_file":           aliasFile,
+		"alias_supported":      aliasSupported,
+		"alias_created":        aliasCreated,
+		"alias_offered":        s.aliasOffered,
 	})
 }
 
@@ -54,6 +64,9 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		s.jvmMgr.SetAutoAttach(enabled, patterns)
 	}
+	if body.AliasOffered != nil {
+		s.aliasOffered = *body.AliasOffered
+	}
 
 	if err := s.saveConfig(); err != nil {
 		jsonErr(w, "no pude guardar la configuración: "+err.Error(), http.StatusInternalServerError)
@@ -75,6 +88,7 @@ func (s *Server) saveConfig() error {
 		ProxyPort:          s.proxyPort,
 		AutoAttach:         autoAttach,
 		AutoAttachPatterns: patterns,
+		AliasOffered:       s.aliasOffered,
 	}
 	return cfg.Save(s.cfgDir)
 }

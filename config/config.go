@@ -15,6 +15,7 @@ type Config struct {
 	AutoAttach bool `json:"auto_attach"`
 	// AutoAttachPatterns are process names (main class or jar) to watch.
 	AutoAttachPatterns []string `json:"auto_attach_patterns"`
+	AliasOffered       bool     `json:"alias_offered"`
 }
 
 // Load reads settings from dir/settings.json. Missing fields keep their zero
