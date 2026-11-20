@@ -20,6 +20,9 @@ const (
 	ActionMock          ActionType = "mock"
 	ActionModifyHeaders ActionType = "modify_headers"
 	ActionReplaceBody   ActionType = "replace_body"
+	ActionManualReq     ActionType = "manual_req"
+	ActionManualResp    ActionType = "manual_resp"
+	ActionManualBoth    ActionType = "manual_both"
 )
 
 type Condition struct {
@@ -153,7 +156,9 @@ func (e *RuleEngine) ApplyRequest(f *gmp.Flow) ActionType {
 		if !r.Enabled {
 			continue
 		}
-		if r.Action.Type != ActionBlock && r.Action.Type != ActionMock {
+		switch r.Action.Type {
+		case ActionBlock, ActionMock, ActionManualReq, ActionManualBoth:
+		default:
 			continue
 		}
 		if !matchRequest(r.Condition, f) {
@@ -191,10 +196,10 @@ func (e *RuleEngine) ApplyRequest(f *gmp.Flow) ActionType {
 	return ""
 }
 
-// ApplyResponse evaluates response-phase rules (modify_headers, replace_body).
-func (e *RuleEngine) ApplyResponse(f *gmp.Flow) {
+// ApplyResponse evaluates response-phase rules. Returns the action type that fired, or "".
+func (e *RuleEngine) ApplyResponse(f *gmp.Flow) ActionType {
 	if f.Response == nil {
-		return
+		return ""
 	}
 	e.mu.RLock()
 	rules := make([]Rule, len(e.rules))
@@ -205,7 +210,9 @@ func (e *RuleEngine) ApplyResponse(f *gmp.Flow) {
 		if !r.Enabled {
 			continue
 		}
-		if r.Action.Type != ActionModifyHeaders && r.Action.Type != ActionReplaceBody {
+		switch r.Action.Type {
+		case ActionModifyHeaders, ActionReplaceBody, ActionManualResp, ActionManualBoth:
+		default:
 			continue
 		}
 		if !matchRequest(r.Condition, f) {
@@ -227,8 +234,11 @@ func (e *RuleEngine) ApplyResponse(f *gmp.Flow) {
 			if r.Action.ContentType != "" {
 				f.Response.Header.Set("Content-Type", r.Action.ContentType)
 			}
+		case ActionManualResp, ActionManualBoth:
+			return r.Action.Type
 		}
 	}
+	return ""
 }
 
 func matchRequest(c Condition, f *gmp.Flow) bool {

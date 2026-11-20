@@ -55,7 +55,6 @@ function onMsg(msg) {
       clearFlowsUI();
       break;
     case 'intercept_changed':
-      document.getElementById('intercept-cb').checked = msg.enabled;
       break;
     case 'jvm_auto_attached':
       showToast(`Auto-attached ${msg.name} (PID ${msg.pid})`);
@@ -173,55 +172,53 @@ async function renderDetail(id) {
   statusEl.textContent  = f.status ? String(f.status) : '';
   statusEl.className    = 'detail-url-status ' + (f.status ? 'sc-' + Math.floor(f.status / 100) : 'sc-0');
 
-  // Paused actions
-  const actionsEl = document.getElementById('detail-actions');
-  actionsEl.innerHTML = '';
-  if (f.state === 'paused') {
-    const r = document.createElement('button');
-    r.className = 'btn btn-green'; r.textContent = '▶ Reanudar';
-    r.addEventListener('click', () => resumeFlow(id));
-    const b = document.createElement('button');
-    b.className = 'btn btn-red'; b.textContent = '✕ Bloquear';
-    b.addEventListener('click', () => blockFlow(id));
-    actionsEl.append(r, b);
-  }
-
   // Fetch full detail
   try {
     const res  = await fetch(`/api/flows/${id}`);
     const data = await res.json();
-    renderReqCol(data);
+    renderReqCol(data, f.state);
     renderRespCol(data, f.state);
 
     // expose data to copy dropdown / rule button
     _copyData = data;
-    document.getElementById('copy-wrap').style.display   = '';
+    const paused = f.state === 'paused';
+    document.getElementById('copy-wrap').style.display   = paused ? 'none' : '';
     document.getElementById('rule-wrap').style.display   = '';
-    document.getElementById('replay-wrap').style.display = '';
+    document.getElementById('replay-wrap').style.display = paused ? 'none' : '';
   } catch {
     document.getElementById('req-col').innerHTML  = '<span class="body-empty">Error cargando detalle.</span>';
     document.getElementById('resp-col').innerHTML = '';
   }
 }
 
-function renderReqCol(data) {
+function renderReqCol(data, state) {
   const col = document.getElementById('req-col');
   col.innerHTML = '';
   col.appendChild(headersBlock(data.req_headers));
   col.appendChild(bodyBlock(data.req_body, ctFrom(data.req_headers)));
+  if (state === 'paused' && data.paused_at !== 'response') {
+    col.appendChild(buildPausedRequestEditor(data));
+  }
 }
 
 function renderRespCol(data, state) {
   const col = document.getElementById('resp-col');
   col.innerHTML = '';
 
-  if (state === 'paused') {
-    col.appendChild(buildPausedEditor(data));
+  if (state === 'paused' && data.paused_at === 'response') {
+    col.appendChild(headersBlock(data.resp_headers));
+    col.appendChild(bodyBlock(data.resp_body, ctFrom(data.resp_headers)));
+    col.appendChild(buildPausedResponseEditor(data));
     return;
   }
 
   if (state === 'blocked') {
     col.innerHTML = '<span class="body-empty">Petición bloqueada (403).</span>';
+    return;
+  }
+
+  if (state === 'paused') {
+    col.innerHTML = '<span class="body-empty">Esperando respuesta del servidor…</span>';
     return;
   }
 
@@ -305,16 +302,13 @@ function bodyBlock(body, ct) {
   return wrap;
 }
 
-// ── Intercept (pause all) ─────────────────────────────────────────────────────
-document.getElementById('intercept-cb').addEventListener('change', async e => {
-  await fetch('/api/intercept', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled: e.target.checked }),
-  });
-});
-
 function buildPausedEditor(data) {
+  return data.paused_at === 'response'
+    ? buildPausedResponseEditor(data)
+    : buildPausedRequestEditor(data);
+}
+
+function buildPausedRequestEditor(data) {
   const banner = document.createElement('div');
   banner.className = 'paused-banner';
 
@@ -322,6 +316,25 @@ function buildPausedEditor(data) {
   title.className = 'paused-banner-title';
   title.textContent = '⏸ Petición en pausa — edita y reanuda';
   banner.appendChild(title);
+
+  // Query params
+  const qpLabel = document.createElement('div');
+  qpLabel.className = 'paused-edit-label';
+  const qpAddBtn = document.createElement('button');
+  qpAddBtn.className = 'btn hdr-add-btn';
+  qpAddBtn.textContent = '+ Param';
+  qpAddBtn.addEventListener('click', () => addHeaderRow('intercept-qp-rows', '', ''));
+  qpLabel.append(Object.assign(document.createElement('span'), {textContent: 'Query params'}), qpAddBtn);
+  banner.appendChild(qpLabel);
+
+  const qpRows = document.createElement('div');
+  qpRows.className = 'hdr-rows';
+  qpRows.id = 'intercept-qp-rows';
+  banner.appendChild(qpRows);
+  try {
+    const qp = new URL(data.url).searchParams;
+    qp.forEach((v, k) => addHeaderRowEl(qpRows, k, v));
+  } catch {}
 
   // Headers
   const hdrLabel = document.createElement('div');
@@ -338,10 +351,9 @@ function buildPausedEditor(data) {
   hdrRows.id = 'intercept-hdr-rows';
   banner.appendChild(hdrRows);
   for (const [k, v] of Object.entries(data.req_headers || {})) {
-    addHeaderRow('intercept-hdr-rows', k, v);
+    addHeaderRowEl(hdrRows, k, v);
   }
 
-  // Body
   const bodyLabel = document.createElement('div');
   bodyLabel.className = 'paused-edit-label';
   bodyLabel.append(Object.assign(document.createElement('span'), {textContent: 'Body'}));
@@ -353,7 +365,6 @@ function buildPausedEditor(data) {
   bodyTA.value = data.req_body || '';
   banner.appendChild(bodyTA);
 
-  // Actions
   const actions = document.createElement('div');
   actions.className = 'paused-banner-actions';
   actions.style.marginTop = '10px';
@@ -378,13 +389,98 @@ function buildPausedEditor(data) {
   return banner;
 }
 
-async function resumeFlowWith(id) {
-  const headers = readHeaderRows('intercept-hdr-rows') || {};
-  const body = document.getElementById('intercept-body').value;
+function buildPausedResponseEditor(data) {
+  const banner = document.createElement('div');
+  banner.className = 'paused-banner';
+
+  const title = document.createElement('div');
+  title.className = 'paused-banner-title';
+  title.textContent = '⏸ Respuesta en pausa — edita antes de enviar al cliente';
+  banner.appendChild(title);
+
+  // Status
+  const statusLabel = document.createElement('div');
+  statusLabel.className = 'paused-edit-label';
+  statusLabel.append(Object.assign(document.createElement('span'), {textContent: 'Status'}));
+  banner.appendChild(statusLabel);
+  const statusInput = document.createElement('input');
+  statusInput.type = 'number'; statusInput.id = 'intercept-resp-status';
+  statusInput.value = data.status || 200;
+  statusInput.style.cssText = 'background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;width:100px;font-family:monospace;font-size:12px;';
+  banner.appendChild(statusInput);
+
+  // Headers
+  const hdrLabel = document.createElement('div');
+  hdrLabel.className = 'paused-edit-label';
+  const hdrAddBtn = document.createElement('button');
+  hdrAddBtn.className = 'btn hdr-add-btn';
+  hdrAddBtn.textContent = '+ Header';
+  hdrAddBtn.addEventListener('click', () => addHeaderRow('intercept-resp-hdr-rows', '', ''));
+  hdrLabel.append(Object.assign(document.createElement('span'), {textContent: 'Headers'}), hdrAddBtn);
+  banner.appendChild(hdrLabel);
+
+  const hdrRows = document.createElement('div');
+  hdrRows.className = 'hdr-rows';
+  hdrRows.id = 'intercept-resp-hdr-rows';
+  banner.appendChild(hdrRows);
+  for (const [k, v] of Object.entries(data.resp_headers || {})) {
+    addHeaderRowEl(hdrRows, k, v);
+  }
+
+  // Body
+  const bodyLabel = document.createElement('div');
+  bodyLabel.className = 'paused-edit-label';
+  bodyLabel.append(Object.assign(document.createElement('span'), {textContent: 'Body'}));
+  banner.appendChild(bodyLabel);
+  const bodyTA = document.createElement('textarea');
+  bodyTA.className = 'intercept-body-ta';
+  bodyTA.id = 'intercept-resp-body';
+  bodyTA.value = data.resp_body || '';
+  banner.appendChild(bodyTA);
+
+  const actions = document.createElement('div');
+  actions.className = 'paused-banner-actions';
+  actions.style.marginTop = '10px';
+
+  const withBtn = document.createElement('button');
+  withBtn.className = 'btn btn-green';
+  withBtn.textContent = '▶ Enviar al cliente con cambios';
+  withBtn.addEventListener('click', () => resumeResponseWith(data.id));
+
+  const plainBtn = document.createElement('button');
+  plainBtn.className = 'btn';
+  plainBtn.textContent = '▶ Enviar sin cambios';
+  plainBtn.addEventListener('click', () => resumeFlow(data.id));
+
+  const blockBtn = document.createElement('button');
+  blockBtn.className = 'btn btn-red';
+  blockBtn.textContent = '✕ Bloquear';
+  blockBtn.addEventListener('click', () => blockFlow(data.id));
+
+  actions.append(withBtn, plainBtn, blockBtn);
+  banner.appendChild(actions);
+  return banner;
+}
+
+async function resumeResponseWith(id) {
+  const status  = parseInt(document.getElementById('intercept-resp-status')?.value || '0', 10);
+  const headers = readHeaderRows('intercept-resp-hdr-rows') || {};
+  const body    = document.getElementById('intercept-resp-body')?.value;
   await fetch(`/api/flows/${id}/resume`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ headers, body }),
+    body: JSON.stringify({ resp_status: status || undefined, resp_headers: headers, resp_body: body }),
+  });
+}
+
+async function resumeFlowWith(id) {
+  const headers     = readHeaderRows('intercept-hdr-rows') || {};
+  const query_params = readHeaderRows('intercept-qp-rows') || {};
+  const body        = document.getElementById('intercept-body').value;
+  await fetch(`/api/flows/${id}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ headers, query_params, body }),
   });
 }
 
@@ -978,8 +1074,8 @@ function buildRuleItem(r) {
   item.className = 'rule-item' + (r.enabled ? '' : ' disabled');
   item.dataset.id = r.id;
 
-  const badgeClass = { block: 'ab-block', mock: 'ab-mock', modify_headers: 'ab-modify', replace_body: 'ab-replace' }[r.action.type] || 'ab-block';
-  const badgeLabel = { block: 'Block', mock: 'Mock', modify_headers: 'Mod-Hdr', replace_body: 'Repl-Body' }[r.action.type] || r.action.type;
+  const badgeClass = { block: 'ab-block', mock: 'ab-mock', modify_headers: 'ab-modify', replace_body: 'ab-replace', manual_req: 'ab-block', manual_resp: 'ab-block', manual_both: 'ab-block' }[r.action.type] || 'ab-block';
+  const badgeLabel = { block: 'Block', mock: 'Mock', modify_headers: 'Mod-Hdr', replace_body: 'Repl-Body', manual_req: 'Manual-Req', manual_resp: 'Manual-Resp', manual_both: 'Manual-Ambos' }[r.action.type] || r.action.type;
 
   item.innerHTML = `
     <label class="rule-toggle" title="${r.enabled ? 'Desactivar' : 'Activar'}">
@@ -1060,6 +1156,18 @@ function wireCTSel(prefix) {
     document.getElementById(`rule-${prefix}-ct-custom`).style.display =
       this.value === '__custom__' ? '' : 'none';
   });
+}
+
+function addHeaderRowEl(container, key, val) {
+  const row = document.createElement('div');
+  row.className = 'hdr-row';
+  row.innerHTML = `
+    <input class="settings-input hdr-key" type="text" placeholder="Nombre" value="${esc(key || '')}">
+    <input class="settings-input hdr-val" type="text" placeholder="Valor"  value="${esc(val || '')}">
+    <button class="btn hdr-rm" title="Eliminar">✕</button>
+  `;
+  row.querySelector('.hdr-rm').addEventListener('click', () => row.remove());
+  container.appendChild(row);
 }
 
 function addHeaderRow(containerId, key, val) {

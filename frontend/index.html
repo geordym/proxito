@@ -245,12 +245,6 @@
       font-size: 7px;
       color: var(--sub);
     }
-    #intercept-cb:checked + .pause-toggle-label {
-      background: rgba(240,96,96,.14);
-      color: var(--s5);
-    }
-    #intercept-cb:checked + .pause-toggle-label::before { color: var(--s5); }
-
     .flow-list { flex: 1; overflow-y: auto; }
 
     .flow-item {
@@ -855,10 +849,6 @@
   <aside class="flow-sidebar">
     <div class="sidebar-toolbar">
       <input class="search-input" id="search-input" type="search" placeholder="Filtrar URL…">
-      <div class="pause-toggle" title="Pausar todas las peticiones antes de enviarlas">
-        <input type="checkbox" id="intercept-cb">
-        <label class="pause-toggle-label" for="intercept-cb">Pausa</label>
-      </div>
       <button class="btn" id="clear-btn" title="Eliminar todos los flows capturados" data-testid="flow-list-clear-all-button">Limpiar todo</button>
     </div>
     <div class="flow-list" id="flow-list"></div>
@@ -1051,6 +1041,9 @@
         <option value="mock">Mock (respuesta artificial)</option>
         <option value="modify_headers">Modificar headers de respuesta</option>
         <option value="replace_body">Reemplazar cuerpo de respuesta</option>
+          <option value="manual_req">Modificar petición manualmente</option>
+          <option value="manual_resp">Modificar respuesta manualmente</option>
+          <option value="manual_both">Modificar petición y respuesta manualmente</option>
       </select>
 
       <div id="rule-fields-mock">

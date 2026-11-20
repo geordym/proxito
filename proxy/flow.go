@@ -31,6 +31,7 @@ type Flow struct {
 	ContentType string
 	Size        int
 	State       State
+	PausedAt    string // "request" or "response"
 	StartedAt   time.Time
 	DoneAt      time.Time
 }
@@ -171,11 +172,44 @@ func (s *Store) UpdateRequest(id string, headers map[string]string, body []byte)
 	}
 }
 
-// ResumeMsg carries the resume decision and optional request edits.
+func (s *Store) SetPausedAt(id, phase string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f, ok := s.byID[id]; ok {
+		f.PausedAt = phase
+	}
+}
+
+func (s *Store) UpdateResponse(id string, status int, headers map[string]string, body []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.byID[id]
+	if !ok {
+		return
+	}
+	if status > 0 {
+		f.Status = status
+	}
+	if headers != nil {
+		f.RespHeaders = make(http.Header)
+		for k, v := range headers {
+			f.RespHeaders.Set(k, v)
+		}
+	}
+	if body != nil {
+		f.RespBody = body
+	}
+}
+
+// ResumeMsg carries the resume decision and optional edits for request or response phase.
 type ResumeMsg struct {
-	OK      bool
-	Headers map[string]string // nil = no change
-	Body    []byte            // nil = no change
+	OK          bool
+	Headers     map[string]string // request headers (nil = no change)
+	QueryParams map[string]string // request query params (nil = no change)
+	Body        []byte            // request body    (nil = no change)
+	RespStatus  int               // response status (0 = no change)
+	RespHeaders map[string]string // response headers (nil = no change)
+	RespBody    []byte            // response body    (nil = no change)
 }
 
 // InterceptHub manages pause/resume of individual flows.
@@ -218,8 +252,12 @@ func (h *InterceptHub) Block(id string) {
 	h.send(id, ResumeMsg{OK: false})
 }
 
-func (h *InterceptHub) ResumeWithChanges(id string, headers map[string]string, body []byte) {
-	h.send(id, ResumeMsg{OK: true, Headers: headers, Body: body})
+func (h *InterceptHub) ResumeWithChanges(id string, headers map[string]string, queryParams map[string]string, body []byte) {
+	h.send(id, ResumeMsg{OK: true, Headers: headers, QueryParams: queryParams, Body: body})
+}
+
+func (h *InterceptHub) ResumeWithResponse(id string, status int, headers map[string]string, body []byte) {
+	h.send(id, ResumeMsg{OK: true, RespStatus: status, RespHeaders: headers, RespBody: body})
 }
 
 func (h *InterceptHub) send(id string, msg ResumeMsg) {
