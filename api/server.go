@@ -82,6 +82,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/flows/{id}", s.handleDeleteFlow)
 	mux.HandleFunc("POST /api/flows/{id}/resume", s.handleResume)
 	mux.HandleFunc("POST /api/flows/{id}/block", s.handleBlock)
+	mux.HandleFunc("POST /api/flows/{id}/replay", s.handleReplay)
 
 	// Intercept toggle + cert download
 	mux.HandleFunc("POST /api/intercept", s.handleIntercept)
