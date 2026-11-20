@@ -354,7 +354,8 @@ function renderJVMGrid(jvms) {
   }
   grid.innerHTML = '';
   jvms.forEach(j => {
-    const name = shortName(j.description || j.desc || 'JVM');
+    const desc = j.description || j.desc || '';
+    const name = shortName(desc || 'JVM');
     const card = document.createElement('div');
     card.className = 'jvm-card' + (j.attached ? ' attached' : '');
     card.innerHTML = `
@@ -366,7 +367,7 @@ function renderJVMGrid(jvms) {
         </div>
         ${j.watched ? `<span class="badge badge-auto" title="En watch list: ${esc(j.name)}" data-testid="jvm-card-auto-badge">auto</span>` : ''}
       </div>
-      <div class="jvm-card-desc">${esc(j.description || j.desc || '')}</div>
+      <div class="jvm-card-desc" title="${esc(desc)}" data-testid="jvm-card-desc">${breakableName(desc)}</div>
       ${j.attached
         ? `<button class="jvm-attach-btn attached" disabled>✓ Interceptando</button>`
         : `<button class="jvm-attach-btn" data-pid="${esc(String(j.pid))}">⬤ Adjuntar</button>`}
@@ -799,6 +800,12 @@ function statusText(f) {
 
 function prettyJSON(s) {
   try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
+}
+
+// Long package names have no spaces, so they can't wrap and get clipped.
+// A <wbr> after each dot lets them break at package boundaries.
+function breakableName(desc) {
+  return esc(desc).replace(/\./g, '.<wbr>');
 }
 
 function shortName(desc) {
