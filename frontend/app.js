@@ -430,6 +430,8 @@ async function loadSettings() {
     document.getElementById('proxy-host').value  = data.proxy_host || '127.0.0.1';
     document.getElementById('proxy-port').value  = data.proxy_port || '8080';
     renderAutoAttach(data.auto_attach, data.auto_attach_patterns || []);
+    renderAliasCard(data);
+    if (!data.alias_offered) showAliasModal(data);
   } catch (e) {
     setStatus('Error al cargar ajustes: ' + e.message, 'var(--s5)');
   }
@@ -1184,9 +1186,102 @@ document.getElementById('rule-from-detail-btn').addEventListener('click', () => 
   if (selectedId) openRuleFromFlow(selectedId, 'custom');
 });
 
+// ── Alias ─────────────────────────────────────────────────────────────────────
+function renderAliasCard(data) {
+  const card = document.getElementById('alias-card');
+  if (!data.alias_supported) { card.style.display = 'none'; return; }
+
+  document.getElementById('alias-cmd-text').textContent = data.alias_command || '';
+  document.getElementById('alias-file-hint').textContent =
+    data.alias_file ? `Se escribirá en: ${data.alias_file}` : '';
+
+  const badge = document.getElementById('alias-created-badge');
+  const btn   = document.getElementById('alias-create-btn');
+  if (data.alias_created) {
+    badge.style.display = '';
+    btn.style.display   = 'none';
+  } else {
+    badge.style.display = 'none';
+    btn.style.display   = '';
+  }
+}
+
+document.getElementById('alias-cmd-copy').addEventListener('click', () => {
+  const txt = document.getElementById('alias-cmd-text').textContent;
+  navigator.clipboard.writeText(txt).then(() => {
+    const btn = document.getElementById('alias-cmd-copy');
+    const orig = btn.textContent; btn.textContent = '✓';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+});
+
+document.getElementById('alias-create-btn').addEventListener('click', async () => {
+  const st = document.getElementById('alias-status');
+  st.textContent = 'Creando…'; st.style.color = 'var(--sub)';
+  try {
+    const res = await fetch('/api/alias', { method: 'POST' });
+    const d   = await res.json();
+    if (!res.ok) throw new Error(d.error || res.statusText);
+    const msg = d.status === 'already_exists' ? 'Ya existía' : `✓ Creado en ${d.alias_file}`;
+    st.textContent = msg; st.style.color = 'var(--s2)';
+    document.getElementById('alias-created-badge').style.display = '';
+    document.getElementById('alias-create-btn').style.display   = 'none';
+    setTimeout(() => { st.textContent = ''; }, 4000);
+  } catch (e) {
+    st.textContent = 'Error: ' + e.message; st.style.color = 'var(--s5)';
+  }
+});
+
+// ── Alias first-launch modal ──────────────────────────────────────────────────
+async function dismissAliasModal() {
+  document.getElementById('alias-modal-overlay').classList.remove('open');
+  await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alias_offered: true }),
+  }).catch(() => {});
+}
+
+function showAliasModal(data) {
+  if (!data.alias_supported) return;
+  document.getElementById('alias-modal-cmd-text').textContent  = data.alias_command || '';
+  document.getElementById('alias-modal-file-hint').textContent =
+    data.alias_file ? `Se escribirá en: ${data.alias_file}` : '';
+  document.getElementById('alias-modal-overlay').classList.add('open');
+}
+
+document.getElementById('alias-modal-cmd-copy').addEventListener('click', () => {
+  const txt = document.getElementById('alias-modal-cmd-text').textContent;
+  navigator.clipboard.writeText(txt).then(() => {
+    const btn = document.getElementById('alias-modal-cmd-copy');
+    const orig = btn.textContent; btn.textContent = '✓';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+});
+
+document.getElementById('alias-modal-dismiss').addEventListener('click', dismissAliasModal);
+
+document.getElementById('alias-modal-create').addEventListener('click', async () => {
+  const st  = document.getElementById('alias-modal-status');
+  const btn = document.getElementById('alias-modal-create');
+  btn.disabled = true; st.textContent = 'Creando…'; st.style.color = 'var(--sub)';
+  try {
+    const res = await fetch('/api/alias', { method: 'POST' });
+    const d   = await res.json();
+    if (!res.ok) throw new Error(d.error || res.statusText);
+    const msg = d.status === 'already_exists' ? 'Ya existía' : `✓ Alias creado en ${d.alias_file}`;
+    st.textContent = msg; st.style.color = 'var(--s2)';
+    setTimeout(dismissAliasModal, 1800);
+  } catch (e) {
+    st.textContent = 'Error: ' + e.message; st.style.color = 'var(--s5)';
+    btn.disabled = false;
+  }
+});
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 setupExportModal();
 connectWS();
 loadJVMs();
 loadFlows();
+loadSettings();
 setInterval(loadJVMs, 5000);

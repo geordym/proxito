@@ -8,11 +8,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
 	gmp "github.com/lqqyt2423/go-mitmproxy/proxy"
 
@@ -31,9 +33,10 @@ var agentJarData []byte
 func main() {
 	homeDir, _ := os.UserHomeDir()
 	proxitoDir := filepath.Join(homeDir, ".proxito")
+	projectDir, _ := os.Getwd()
 
 	proxyHost := flag.String("host", "127.0.0.1", "proxy host")
-	proxyPort := flag.String("port", "8080", "proxy port")
+	proxyPort := flag.String("port", "8020", "proxy port")
 	uiPort := flag.String("ui-port", "8282", "UI port")
 	flag.Parse()
 
@@ -76,6 +79,8 @@ func main() {
 	jvmMgr.SetAutoAttach(cfg.AutoAttach, cfg.AutoAttachPatterns)
 
 	// 6. Create the MITM proxy (go-mitmproxy manages CA cert in proxitoDir)
+	*proxyPort = findFreePort(*proxyHost, *proxyPort)
+	*uiPort = findFreePort("localhost", *uiPort)
 	proxyAddr := *proxyHost + ":" + *proxyPort
 	gmpProxy, err := gmp.NewProxy(&gmp.Options{
 		Addr:              proxyAddr,
@@ -94,6 +99,7 @@ func main() {
 		store, intercept, rules, jvmMgr,
 		certPath, *proxyHost, *proxyPort, proxitoDir,
 		autoDetected, autoPath,
+		projectDir, cfg.AliasOffered,
 		frontendFS,
 	)
 
@@ -139,6 +145,22 @@ func extractJAR(dir string) (string, error) {
 		return "", err
 	}
 	return dest, nil
+}
+
+// findFreePort returns the first available port >= startPort on host.
+func findFreePort(host, startPort string) string {
+	port, err := strconv.Atoi(startPort)
+	if err != nil {
+		return startPort
+	}
+	for {
+		ln, err := net.Listen("tcp", host+":"+strconv.Itoa(port))
+		if err == nil {
+			ln.Close()
+			return strconv.Itoa(port)
+		}
+		port++
+	}
 }
 
 func openBrowser(url string) {

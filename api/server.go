@@ -25,6 +25,8 @@ type Server struct {
 	jdks             []jvm.JDKInfo
 	javaAutoDetected bool
 	javaAutoPath     string
+	projectDir       string
+	aliasOffered     bool
 	frontendFS       embed.FS
 }
 
@@ -36,6 +38,8 @@ func NewServer(
 	certPath, proxyHost, proxyPort, cfgDir string,
 	javaAutoDetected bool,
 	javaAutoPath string,
+	projectDir string,
+	aliasOffered bool,
 	frontendFS embed.FS,
 ) *Server {
 	s := &Server{
@@ -50,6 +54,8 @@ func NewServer(
 		cfgDir:           cfgDir,
 		javaAutoDetected: javaAutoDetected,
 		javaAutoPath:     javaAutoPath,
+		projectDir:       projectDir,
+		aliasOffered:     aliasOffered,
 		frontendFS:       frontendFS,
 	}
 	s.refreshJDKs()
@@ -84,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 	// Settings
 	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	mux.HandleFunc("POST /api/settings", s.handleSaveSettings)
+	mux.HandleFunc("POST /api/alias", s.handleCreateAlias)
 
 	// Rules
 	mux.HandleFunc("GET /api/rules", s.handleListRules)
