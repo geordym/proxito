@@ -153,22 +153,40 @@ func (s *Store) SetError(id string) {
 	}
 }
 
-// ResumeCmd carries the user's decision for a paused flow plus optional edits.
-type ResumeCmd struct {
-	Resume  bool
-	Headers map[string]string
-	Body    []byte
+func (s *Store) UpdateRequest(id string, headers map[string]string, body []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.byID[id]
+	if !ok {
+		return
+	}
+	if headers != nil {
+		f.ReqHeaders = make(http.Header)
+		for k, v := range headers {
+			f.ReqHeaders.Set(k, v)
+		}
+	}
+	if body != nil {
+		f.ReqBody = body
+	}
+}
+
+// ResumeMsg carries the resume decision and optional request edits.
+type ResumeMsg struct {
+	OK      bool
+	Headers map[string]string // nil = no change
+	Body    []byte            // nil = no change
 }
 
 // InterceptHub manages pause/resume of individual flows.
 type InterceptHub struct {
 	mu      sync.Mutex
-	pending map[string]chan ResumeCmd
+	pending map[string]chan ResumeMsg
 	enabled bool
 }
 
 func NewInterceptHub() *InterceptHub {
-	return &InterceptHub{pending: make(map[string]chan ResumeCmd)}
+	return &InterceptHub{pending: make(map[string]chan ResumeMsg)}
 }
 
 func (h *InterceptHub) Enabled() bool {
@@ -183,24 +201,28 @@ func (h *InterceptHub) SetEnabled(v bool) {
 	h.enabled = v
 }
 
-// Wait blocks the calling goroutine until Resume or Block is called for id.
-func (h *InterceptHub) Wait(id string) ResumeCmd {
-	ch := make(chan ResumeCmd, 1)
+// Wait blocks the calling goroutine until Resume, ResumeWithChanges, or Block is called for id.
+func (h *InterceptHub) Wait(id string) ResumeMsg {
+	ch := make(chan ResumeMsg, 1)
 	h.mu.Lock()
 	h.pending[id] = ch
 	h.mu.Unlock()
 	return <-ch
 }
 
-func (h *InterceptHub) Resume(id string, headers map[string]string, body []byte) {
-	h.send(id, ResumeCmd{Resume: true, Headers: headers, Body: body})
+func (h *InterceptHub) Resume(id string) {
+	h.send(id, ResumeMsg{OK: true})
 }
 
 func (h *InterceptHub) Block(id string) {
-	h.send(id, ResumeCmd{Resume: false})
+	h.send(id, ResumeMsg{OK: false})
 }
 
-func (h *InterceptHub) send(id string, cmd ResumeCmd) {
+func (h *InterceptHub) ResumeWithChanges(id string, headers map[string]string, body []byte) {
+	h.send(id, ResumeMsg{OK: true, Headers: headers, Body: body})
+}
+
+func (h *InterceptHub) send(id string, msg ResumeMsg) {
 	h.mu.Lock()
 	ch, ok := h.pending[id]
 	if ok {
@@ -208,6 +230,6 @@ func (h *InterceptHub) send(id string, cmd ResumeCmd) {
 	}
 	h.mu.Unlock()
 	if ok {
-		ch <- cmd
+		ch <- msg
 	}
 }

@@ -85,8 +85,8 @@ func (a *Addon) Request(f *gmp.Flow) {
 		a.store.SetPaused(id)
 		a.broadcast(map[string]any{"type": "flow_paused", "id": id, "state": string(StatePaused)})
 
-		cmd := a.intercept.Wait(id)
-		if !cmd.Resume {
+		msg := a.intercept.Wait(id)
+		if !msg.OK {
 			a.store.SetBlocked(id)
 			a.broadcast(map[string]any{"type": "flow_done", "id": id, "state": string(StateBlocked)})
 			f.Response = &gmp.Response{
@@ -96,12 +96,15 @@ func (a *Addon) Request(f *gmp.Flow) {
 			}
 			return
 		}
-		for k, v := range cmd.Headers {
-			f.Request.Header.Set(k, v)
+		if len(msg.Headers) > 0 {
+			for k, v := range msg.Headers {
+				f.Request.Header.Set(k, v)
+			}
 		}
-		if len(cmd.Body) > 0 {
-			f.Request.Body = cmd.Body
+		if msg.Body != nil {
+			f.Request.Body = msg.Body
 		}
+		a.store.UpdateRequest(id, msg.Headers, msg.Body)
 		a.broadcast(map[string]any{"type": "flow_resumed", "id": id, "state": string(StateActive)})
 	}
 }
