@@ -18,20 +18,20 @@ func newFlowServer(ids ...string) *Server {
 }
 
 // waitPaused simulates the proxy goroutine blocked on a paused flow and
-// returns a channel that receives the decision (true = resume).
-func waitPaused(s *Server, id string) <-chan bool {
-	done := make(chan bool, 1)
+// returns a channel that receives the resume decision.
+func waitPaused(s *Server, id string) <-chan proxy.ResumeMsg {
+	done := make(chan proxy.ResumeMsg, 1)
 	go func() { done <- s.intercept.Wait(id) }()
 	// Wait registers the pending channel asynchronously; give it a moment.
 	time.Sleep(20 * time.Millisecond)
 	return done
 }
 
-func expectResumed(t *testing.T, done <-chan bool) {
+func expectResumed(t *testing.T, done <-chan proxy.ResumeMsg) {
 	t.Helper()
 	select {
-	case resumed := <-done:
-		if !resumed {
+	case msg := <-done:
+		if !msg.OK {
 			t.Error("paused flow was blocked, want resumed")
 		}
 	case <-time.After(time.Second):
