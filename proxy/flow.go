@@ -153,15 +153,22 @@ func (s *Store) SetError(id string) {
 	}
 }
 
+// ResumeCmd carries the user's decision for a paused flow plus optional edits.
+type ResumeCmd struct {
+	Resume  bool
+	Headers map[string]string
+	Body    []byte
+}
+
 // InterceptHub manages pause/resume of individual flows.
 type InterceptHub struct {
 	mu      sync.Mutex
-	pending map[string]chan bool // true = resume, false = block
+	pending map[string]chan ResumeCmd
 	enabled bool
 }
 
 func NewInterceptHub() *InterceptHub {
-	return &InterceptHub{pending: make(map[string]chan bool)}
+	return &InterceptHub{pending: make(map[string]chan ResumeCmd)}
 }
 
 func (h *InterceptHub) Enabled() bool {
@@ -177,24 +184,23 @@ func (h *InterceptHub) SetEnabled(v bool) {
 }
 
 // Wait blocks the calling goroutine until Resume or Block is called for id.
-// Returns true if the flow should be resumed, false if blocked.
-func (h *InterceptHub) Wait(id string) bool {
-	ch := make(chan bool, 1)
+func (h *InterceptHub) Wait(id string) ResumeCmd {
+	ch := make(chan ResumeCmd, 1)
 	h.mu.Lock()
 	h.pending[id] = ch
 	h.mu.Unlock()
 	return <-ch
 }
 
-func (h *InterceptHub) Resume(id string) {
-	h.send(id, true)
+func (h *InterceptHub) Resume(id string, headers map[string]string, body []byte) {
+	h.send(id, ResumeCmd{Resume: true, Headers: headers, Body: body})
 }
 
 func (h *InterceptHub) Block(id string) {
-	h.send(id, false)
+	h.send(id, ResumeCmd{Resume: false})
 }
 
-func (h *InterceptHub) send(id string, v bool) {
+func (h *InterceptHub) send(id string, cmd ResumeCmd) {
 	h.mu.Lock()
 	ch, ok := h.pending[id]
 	if ok {
@@ -202,6 +208,6 @@ func (h *InterceptHub) send(id string, v bool) {
 	}
 	h.mu.Unlock()
 	if ok {
-		ch <- v
+		ch <- cmd
 	}
 }

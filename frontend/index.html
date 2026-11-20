@@ -385,8 +385,16 @@
       border: 1px solid rgba(240,96,96,.28);
       border-radius: 6px; padding: 12px 14px; margin-bottom: 14px;
     }
-    .paused-banner-title { font-size: 12px; font-weight: 700; color: var(--s5); margin-bottom: 8px; }
-    .paused-banner-actions { display: flex; gap: 8px; }
+    .paused-banner-title { font-size: 12px; font-weight: 700; color: var(--s5); margin-bottom: 10px; }
+    .paused-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .paused-edit-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--sub); margin-top: 10px; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between; }
+    .intercept-body-ta {
+      width: 100%; box-sizing: border-box;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+      color: var(--text); font-family: monospace; font-size: 11px;
+      padding: 6px 8px; resize: vertical; min-height: 60px;
+    }
+    .intercept-body-ta:focus { outline: none; border-color: var(--teal); }
 
     /* ── Export button ──────────────────────────── */
     .copy-wrap { flex-shrink: 0; }

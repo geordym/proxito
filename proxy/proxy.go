@@ -85,8 +85,8 @@ func (a *Addon) Request(f *gmp.Flow) {
 		a.store.SetPaused(id)
 		a.broadcast(map[string]any{"type": "flow_paused", "id": id, "state": string(StatePaused)})
 
-		resume := a.intercept.Wait(id)
-		if !resume {
+		cmd := a.intercept.Wait(id)
+		if !cmd.Resume {
 			a.store.SetBlocked(id)
 			a.broadcast(map[string]any{"type": "flow_done", "id": id, "state": string(StateBlocked)})
 			f.Response = &gmp.Response{
@@ -95,6 +95,12 @@ func (a *Addon) Request(f *gmp.Flow) {
 				Body:       []byte("Blocked by Proxito"),
 			}
 			return
+		}
+		for k, v := range cmd.Headers {
+			f.Request.Header.Set(k, v)
+		}
+		if len(cmd.Body) > 0 {
+			f.Request.Body = cmd.Body
 		}
 		a.broadcast(map[string]any{"type": "flow_resumed", "id": id, "state": string(StateActive)})
 	}
