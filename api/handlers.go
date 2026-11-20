@@ -99,6 +99,7 @@ func (s *Server) handleGetFlow(w http.ResponseWriter, r *http.Request) {
 		"content_type": f.ContentType,
 		"size":         f.Size,
 		"state":        string(f.State),
+		"paused_at":    f.PausedAt,
 		"duration_ms":  f.DurationMs(),
 	})
 }
@@ -106,18 +107,29 @@ func (s *Server) handleGetFlow(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var body struct {
-		Headers map[string]string `json:"headers"`
-		Body    *string           `json:"body"`
+		Headers     map[string]string `json:"headers"`
+		QueryParams map[string]string `json:"query_params"`
+		Body        *string           `json:"body"`
+		RespStatus  int               `json:"resp_status"`
+		RespHeaders map[string]string `json:"resp_headers"`
+		RespBody    *string           `json:"resp_body"`
 	}
-	// body is optional — ignore decode errors
 	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
-	if body.Headers != nil || body.Body != nil {
+
+	switch {
+	case body.RespHeaders != nil || body.RespBody != nil || body.RespStatus > 0:
+		var rb []byte
+		if body.RespBody != nil {
+			rb = []byte(*body.RespBody)
+		}
+		s.intercept.ResumeWithResponse(id, body.RespStatus, body.RespHeaders, rb)
+	case body.Headers != nil || body.QueryParams != nil || body.Body != nil:
 		var b []byte
 		if body.Body != nil {
 			b = []byte(*body.Body)
 		}
-		s.intercept.ResumeWithChanges(id, body.Headers, b)
-	} else {
+		s.intercept.ResumeWithChanges(id, body.Headers, body.QueryParams, b)
+	default:
 		s.intercept.Resume(id)
 	}
 	jsonOK(w, map[string]string{"status": "ok"})
@@ -150,18 +162,6 @@ func (s *Server) handleBlock(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]string{"status": "ok"})
 }
 
-func (s *Server) handleIntercept(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		jsonErr(w, "invalid body", http.StatusBadRequest)
-		return
-	}
-	s.intercept.SetEnabled(body.Enabled)
-	s.hub.Broadcast(map[string]any{"type": "intercept_changed", "enabled": body.Enabled})
-	jsonOK(w, map[string]bool{"enabled": body.Enabled})
-}
 
 func (s *Server) handleCert(w http.ResponseWriter, r *http.Request) {
 	data, err := os.ReadFile(s.certPath)
